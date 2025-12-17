@@ -7,6 +7,25 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <thread>
+
+void handleResponse(int client_fd)
+{
+  char buffer[1024];
+
+  while (true)
+  {
+    int num_bytes = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
+    if (num_bytes <= 0)
+    {
+      std::cout << "Failed to read payload." << std::endl;
+      close(client_fd);
+      return;
+    }
+    std::string response = std::string("+PONG\r\n");
+    send(client_fd, response.c_str(), response.size(), 0);
+  }
+}
 
 int main(int argc, char **argv) {
   // Flush after every std::cout / std::cerr
@@ -45,24 +64,14 @@ int main(int argc, char **argv) {
   
   struct sockaddr_in client_addr;
   int client_addr_len = sizeof(client_addr);
-  std::cout << "Waiting for a client to connect...\n";
-
-  int client_fd = accept(server_fd, (struct sockaddr*)&client_addr, (socklen_t*)&client_addr_len);
-  std::cout << "Client connected\n";
-  char buffer[1024]={0};
-  while (true){
-  int bytes_read=read(client_fd,buffer, sizeof(buffer));
-  if (bytes_read <0){
-    std::cerr << "failed to read\n";
-    return 1;
+  
+  while (true)
+  {
+    std::cout << "Waiting for a client to connect...\n";
+    int client_fd = accept(server_fd, (struct sockaddr*)&client_addr, (socklen_t*)&client_addr_len);
+    std::cout << "Client connected\n";
+    std::thread client_thread(handleResponse, client_fd);
+    client_thread.detach();
   }
-  std::string request(buffer);
-  if (request.find("PING")!=std::string::npos){
-    std::string respond ("+PONG\r\n");
-    write(client_fd,respond.c_str(),respond.size());
-  }
-}
-  close(server_fd);
-
   return 0;
 }

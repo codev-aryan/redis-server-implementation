@@ -171,8 +171,6 @@ void handleResponse(int client_fd)
     }
     else if (command == "RPUSH" && args.size() >= 3) {
         std::string key = args[1];
-        // We only handle one element for this stage, but typically RPUSH accepts multiple
-        std::string element = args[2];
         int list_size = 0;
         bool wrong_type = false;
 
@@ -184,15 +182,21 @@ void handleResponse(int client_fd)
                 // Create new list
                 Entry entry;
                 entry.type = VAL_LIST;
-                entry.list_val.push_back(element);
+                // Add all elements provided
+                for (size_t i = 2; i < args.size(); ++i) {
+                    entry.list_val.push_back(args[i]);
+                }
+                list_size = entry.list_val.size();
                 kv_store[key] = entry;
-                list_size = 1;
             } else {
                 // Check type
                 if (it->second.type != VAL_LIST) {
                     wrong_type = true;
                 } else {
-                    it->second.list_val.push_back(element);
+                    // Append all elements provided
+                    for (size_t i = 2; i < args.size(); ++i) {
+                        it->second.list_val.push_back(args[i]);
+                    }
                     list_size = it->second.list_val.size();
                 }
             }
@@ -201,7 +205,6 @@ void handleResponse(int client_fd)
         if (wrong_type) {
             response = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
         } else {
-            // Return integer response
             response = ":" + std::to_string(list_size) + "\r\n";
         }
     }

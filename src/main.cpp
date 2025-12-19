@@ -8,6 +8,61 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <thread>
+#include <vector>
+#include <sstream>
+#include <algorithm>
+
+// Helper to convert string to upper case for case-insensitive comparison
+std::string to_upper(std::string str) {
+    std::transform(str.begin(), str.end(), str.begin(), ::toupper);
+    return str;
+}
+
+// Basic RESP parser for Arrays of Bulk Strings
+std::vector<std::string> parse_resp(const std::string& input) {
+    std::vector<std::string> args;
+    size_t pos = 0;
+
+    // We expect a RESP Array starting with '*'
+    if (input.empty() || input[pos] != '*') return args; 
+    pos++;
+
+    // Read the number of elements in the array
+    size_t line_end = input.find("\r\n", pos);
+    if (line_end == std::string::npos) return args;
+    
+    int count = 0;
+    try {
+        count = std::stoi(input.substr(pos, line_end - pos));
+    } catch (...) { return args; }
+    
+    pos = line_end + 2;
+
+    for (int i = 0; i < count; ++i) {
+        // Each element should start with '$' indicating a bulk string
+        if (pos >= input.size() || input[pos] != '$') break;
+        pos++;
+
+        // Read the length of the bulk string
+        line_end = input.find("\r\n", pos);
+        if (line_end == std::string::npos) break;
+        
+        int str_len = 0;
+        try {
+            str_len = std::stoi(input.substr(pos, line_end - pos));
+        } catch (...) { break; }
+        
+        pos = line_end + 2;
+
+        // Validate bounds before extracting string
+        if (pos + str_len > input.size()) break;
+
+        // Extract the string argument
+        args.push_back(input.substr(pos, str_len));
+        pos += str_len + 2; // Skip the string content and the trailing \r\n
+    }
+    return args;
+}
 
 void handleResponse(int client_fd)
 {
@@ -15,20 +70,41 @@ void handleResponse(int client_fd)
 
   while (true)
   {
+    memset(buffer, 0, sizeof(buffer));
     int num_bytes = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
+    
     if (num_bytes <= 0)
     {
-      std::cout << "Failed to read payload." << std::endl;
       close(client_fd);
       return;
     }
-    std::string response = std::string("+PONG\r\n");
+
+    std::string request(buffer, num_bytes);
+    std::vector<std::string> args = parse_resp(request);
+
+    if (args.empty()) continue;
+
+    std::string command = to_upper(args[0]);
+    std::string response;
+
+    if (command == "PING") {
+      response = "+PONG\r\n";
+    } 
+    else if (command == "ECHO" && args.size() > 1) {
+      // Encode argument as a Bulk String: $<length>\r\n<content>\r\n
+      std::string arg = args[1];
+      response = "$" + std::to_string(arg.length()) + "\r\n" + arg + "\r\n";
+    }
+    else {
+        // Fallback or Error (optional, strictly speaking not needed for this stage test)
+        response = "-ERR unknown command\r\n";
+    }
+
     send(client_fd, response.c_str(), response.size(), 0);
   }
 }
 
 int main(int argc, char **argv) {
-  // Flush after every std::cout / std::cerr
   std::cout << std::unitbuf;
   std::cerr << std::unitbuf;
   
@@ -38,8 +114,6 @@ int main(int argc, char **argv) {
    return 1;
   }
   
-  // Since the tester restarts your program quite often, setting SO_REUSEADDR
-  // ensures that we don't run into 'Address already in use' errors
   int reuse = 1;
   if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
     std::cerr << "setsockopt failed\n";
@@ -65,13 +139,15 @@ int main(int argc, char **argv) {
   struct sockaddr_in client_addr;
   int client_addr_len = sizeof(client_addr);
   
+  std::cout << "Waiting for clients...\n";
+  
   while (true)
   {
-    std::cout << "Waiting for a client to connect...\n";
     int client_fd = accept(server_fd, (struct sockaddr*)&client_addr, (socklen_t*)&client_addr_len);
-    std::cout << "Client connected\n";
-    std::thread client_thread(handleResponse, client_fd);
-    client_thread.detach();
+    if (client_fd >= 0) {
+        std::thread client_thread(handleResponse, client_fd);
+        client_thread.detach();
+    }
   }
   return 0;
 }

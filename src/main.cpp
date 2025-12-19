@@ -13,27 +13,36 @@
 #include <algorithm>
 #include <unordered_map>
 #include <mutex>
+#include <chrono>
 
-// Global key-value store and mutex for thread safety
-std::unordered_map<std::string, std::string> kv_store;
+// Structure to hold value and expiration
+struct Entry {
+    std::string value;
+    // Expiry timestamp in milliseconds since epoch. 0 indicates no expiry.
+    long long expiry_at = 0;
+};
+
+std::unordered_map<std::string, Entry> kv_store;
 std::mutex kv_mutex;
 
-// Helper to convert string to upper case for case-insensitive comparison
+// Helper: Get current time in milliseconds
+long long current_time_ms() {
+    using namespace std::chrono;
+    return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+}
+
 std::string to_upper(std::string str) {
     std::transform(str.begin(), str.end(), str.begin(), ::toupper);
     return str;
 }
 
-// Basic RESP parser for Arrays of Bulk Strings
 std::vector<std::string> parse_resp(const std::string& input) {
     std::vector<std::string> args;
     size_t pos = 0;
 
-    // We expect a RESP Array starting with '*'
     if (input.empty() || input[pos] != '*') return args; 
     pos++;
 
-    // Read the number of elements in the array
     size_t line_end = input.find("\r\n", pos);
     if (line_end == std::string::npos) return args;
     
@@ -45,11 +54,9 @@ std::vector<std::string> parse_resp(const std::string& input) {
     pos = line_end + 2;
 
     for (int i = 0; i < count; ++i) {
-        // Each element should start with '$' indicating a bulk string
         if (pos >= input.size() || input[pos] != '$') break;
         pos++;
 
-        // Read the length of the bulk string
         line_end = input.find("\r\n", pos);
         if (line_end == std::string::npos) break;
         
@@ -59,13 +66,10 @@ std::vector<std::string> parse_resp(const std::string& input) {
         } catch (...) { break; }
         
         pos = line_end + 2;
-
-        // Validate bounds before extracting string
         if (pos + str_len > input.size()) break;
 
-        // Extract the string argument
         args.push_back(input.substr(pos, str_len));
-        pos += str_len + 2; // Skip the string content and the trailing \r\n
+        pos += str_len + 2; 
     }
     return args;
 }
@@ -101,35 +105,52 @@ void handleResponse(int client_fd)
       response = "$" + std::to_string(arg.length()) + "\r\n" + arg + "\r\n";
     }
     else if (command == "SET" && args.size() >= 3) {
-      // SET key value
       std::string key = args[1];
       std::string val = args[2];
+      long long expiry = 0;
+
+      // Parse options (starting from index 3)
+      for (size_t i = 3; i < args.size(); ++i) {
+          std::string opt = to_upper(args[i]);
+          if (opt == "PX" && i + 1 < args.size()) {
+              try {
+                  long long ms = std::stoll(args[i+1]);
+                  expiry = current_time_ms() + ms;
+                  i++; // skip the value
+              } catch (...) {}
+          }
+      }
       
       {
           std::lock_guard<std::mutex> lock(kv_mutex);
-          kv_store[key] = val;
+          kv_store[key] = {val, expiry};
       }
       
       response = "+OK\r\n";
     }
     else if (command == "GET" && args.size() >= 2) {
-      // GET key
       std::string key = args[1];
       std::string val;
       bool found = false;
+      long long now = current_time_ms();
 
       {
           std::lock_guard<std::mutex> lock(kv_mutex);
-          if (kv_store.find(key) != kv_store.end()) {
-              val = kv_store[key];
-              found = true;
+          auto it = kv_store.find(key);
+          if (it != kv_store.end()) {
+              if (it->second.expiry_at != 0 && now > it->second.expiry_at) {
+                  // Key is expired
+                  kv_store.erase(it);
+              } else {
+                  val = it->second.value;
+                  found = true;
+              }
           }
       }
 
       if (found) {
           response = "$" + std::to_string(val.length()) + "\r\n" + val + "\r\n";
       } else {
-          // Null Bulk String for non-existent keys
           response = "$-1\r\n";
       }
     }

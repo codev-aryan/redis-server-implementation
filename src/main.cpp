@@ -11,6 +11,12 @@
 #include <vector>
 #include <sstream>
 #include <algorithm>
+#include <unordered_map>
+#include <mutex>
+
+// Global key-value store and mutex for thread safety
+std::unordered_map<std::string, std::string> kv_store;
+std::mutex kv_mutex;
 
 // Helper to convert string to upper case for case-insensitive comparison
 std::string to_upper(std::string str) {
@@ -91,12 +97,43 @@ void handleResponse(int client_fd)
       response = "+PONG\r\n";
     } 
     else if (command == "ECHO" && args.size() > 1) {
-      // Encode argument as a Bulk String: $<length>\r\n<content>\r\n
       std::string arg = args[1];
       response = "$" + std::to_string(arg.length()) + "\r\n" + arg + "\r\n";
     }
+    else if (command == "SET" && args.size() >= 3) {
+      // SET key value
+      std::string key = args[1];
+      std::string val = args[2];
+      
+      {
+          std::lock_guard<std::mutex> lock(kv_mutex);
+          kv_store[key] = val;
+      }
+      
+      response = "+OK\r\n";
+    }
+    else if (command == "GET" && args.size() >= 2) {
+      // GET key
+      std::string key = args[1];
+      std::string val;
+      bool found = false;
+
+      {
+          std::lock_guard<std::mutex> lock(kv_mutex);
+          if (kv_store.find(key) != kv_store.end()) {
+              val = kv_store[key];
+              found = true;
+          }
+      }
+
+      if (found) {
+          response = "$" + std::to_string(val.length()) + "\r\n" + val + "\r\n";
+      } else {
+          // Null Bulk String for non-existent keys
+          response = "$-1\r\n";
+      }
+    }
     else {
-        // Fallback or Error (optional, strictly speaking not needed for this stage test)
         response = "-ERR unknown command\r\n";
     }
 

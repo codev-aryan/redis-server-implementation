@@ -15,9 +15,18 @@
 #include <mutex>
 #include <chrono>
 
-// Structure to hold value and expiration
+// Enum to distinguish data types
+enum ValueType {
+    VAL_STRING,
+    VAL_LIST
+};
+
+// Structure to hold value, type, and expiration
 struct Entry {
-    std::string value;
+    ValueType type = VAL_STRING;
+    std::string string_val;
+    std::vector<std::string> list_val;
+    
     // Expiry timestamp in milliseconds since epoch. 0 indicates no expiry.
     long long expiry_at = 0;
 };
@@ -25,7 +34,6 @@ struct Entry {
 std::unordered_map<std::string, Entry> kv_store;
 std::mutex kv_mutex;
 
-// Helper: Get current time in milliseconds
 long long current_time_ms() {
     using namespace std::chrono;
     return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
@@ -109,21 +117,24 @@ void handleResponse(int client_fd)
       std::string val = args[2];
       long long expiry = 0;
 
-      // Parse options (starting from index 3)
       for (size_t i = 3; i < args.size(); ++i) {
           std::string opt = to_upper(args[i]);
           if (opt == "PX" && i + 1 < args.size()) {
               try {
                   long long ms = std::stoll(args[i+1]);
                   expiry = current_time_ms() + ms;
-                  i++; // skip the value
+                  i++; 
               } catch (...) {}
           }
       }
       
       {
           std::lock_guard<std::mutex> lock(kv_mutex);
-          kv_store[key] = {val, expiry};
+          Entry entry;
+          entry.type = VAL_STRING;
+          entry.string_val = val;
+          entry.expiry_at = expiry;
+          kv_store[key] = entry;
       }
       
       response = "+OK\r\n";
@@ -132,6 +143,7 @@ void handleResponse(int client_fd)
       std::string key = args[1];
       std::string val;
       bool found = false;
+      bool wrong_type = false;
       long long now = current_time_ms();
 
       {
@@ -139,20 +151,59 @@ void handleResponse(int client_fd)
           auto it = kv_store.find(key);
           if (it != kv_store.end()) {
               if (it->second.expiry_at != 0 && now > it->second.expiry_at) {
-                  // Key is expired
                   kv_store.erase(it);
+              } else if (it->second.type != VAL_STRING) {
+                  wrong_type = true;
               } else {
-                  val = it->second.value;
+                  val = it->second.string_val;
                   found = true;
               }
           }
       }
 
-      if (found) {
+      if (wrong_type) {
+          response = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+      } else if (found) {
           response = "$" + std::to_string(val.length()) + "\r\n" + val + "\r\n";
       } else {
           response = "$-1\r\n";
       }
+    }
+    else if (command == "RPUSH" && args.size() >= 3) {
+        std::string key = args[1];
+        // We only handle one element for this stage, but typically RPUSH accepts multiple
+        std::string element = args[2];
+        int list_size = 0;
+        bool wrong_type = false;
+
+        {
+            std::lock_guard<std::mutex> lock(kv_mutex);
+            auto it = kv_store.find(key);
+            
+            if (it == kv_store.end()) {
+                // Create new list
+                Entry entry;
+                entry.type = VAL_LIST;
+                entry.list_val.push_back(element);
+                kv_store[key] = entry;
+                list_size = 1;
+            } else {
+                // Check type
+                if (it->second.type != VAL_LIST) {
+                    wrong_type = true;
+                } else {
+                    it->second.list_val.push_back(element);
+                    list_size = it->second.list_val.size();
+                }
+            }
+        }
+
+        if (wrong_type) {
+            response = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+        } else {
+            // Return integer response
+            response = ":" + std::to_string(list_size) + "\r\n";
+        }
     }
     else {
         response = "-ERR unknown command\r\n";

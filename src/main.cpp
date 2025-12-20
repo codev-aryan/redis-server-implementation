@@ -315,6 +315,43 @@ void handleResponse(int client_fd)
              response = ":" + std::to_string(len) + "\r\n";
         }
     }
+    else if (command == "LPOP" && args.size() >= 2) {
+        std::string key = args[1];
+        std::string val;
+        bool found = false;
+        bool wrong_type = false;
+        long long now = current_time_ms();
+
+        {
+            std::lock_guard<std::mutex> lock(kv_mutex);
+            auto it = kv_store.find(key);
+            
+            if (it != kv_store.end()) {
+                 // Check expiry first
+                 if (it->second.expiry_at != 0 && now > it->second.expiry_at) {
+                    kv_store.erase(it);
+                 } else {
+                     if (it->second.type != VAL_LIST) {
+                        wrong_type = true;
+                     } else {
+                        if (!it->second.list_val.empty()) {
+                            val = it->second.list_val.front();
+                            it->second.list_val.pop_front();
+                            found = true;
+                        }
+                     }
+                 }
+            }
+        }
+
+        if (wrong_type) {
+            response = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+        } else if (found) {
+            response = "$" + std::to_string(val.length()) + "\r\n" + val + "\r\n";
+        } else {
+            response = "$-1\r\n";
+        }
+    }
     else {
         response = "-ERR unknown command\r\n";
     }

@@ -179,21 +179,17 @@ void handleResponse(int client_fd)
             auto it = kv_store.find(key);
             
             if (it == kv_store.end()) {
-                // Create new list
                 Entry entry;
                 entry.type = VAL_LIST;
-                // Add all elements provided
                 for (size_t i = 2; i < args.size(); ++i) {
                     entry.list_val.push_back(args[i]);
                 }
                 list_size = entry.list_val.size();
                 kv_store[key] = entry;
             } else {
-                // Check type
                 if (it->second.type != VAL_LIST) {
                     wrong_type = true;
                 } else {
-                    // Append all elements provided
                     for (size_t i = 2; i < args.size(); ++i) {
                         it->second.list_val.push_back(args[i]);
                     }
@@ -206,6 +202,51 @@ void handleResponse(int client_fd)
             response = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
         } else {
             response = ":" + std::to_string(list_size) + "\r\n";
+        }
+    }
+    else if (command == "LRANGE" && args.size() >= 4) {
+        std::string key = args[1];
+        int start = 0;
+        int stop = 0;
+        bool wrong_type = false;
+        std::vector<std::string> result_list;
+
+        try {
+            start = std::stoi(args[2]);
+            stop = std::stoi(args[3]);
+        } catch (...) {
+             // Handle parsing error if necessary, default 0 for now
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(kv_mutex);
+            auto it = kv_store.find(key);
+            
+            if (it != kv_store.end()) {
+                 if (it->second.type != VAL_LIST) {
+                    wrong_type = true;
+                 } else {
+                    int len = it->second.list_val.size();
+                    
+                    if (start < 0) start = 0;
+                    if (stop >= len) stop = len - 1;
+                    
+                    if (start <= stop && start < len) {
+                        for (int i = start; i <= stop; ++i) {
+                            result_list.push_back(it->second.list_val[i]);
+                        }
+                    }
+                 }
+            }
+        }
+
+        if (wrong_type) {
+            response = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+        } else {
+            response = "*" + std::to_string(result_list.size()) + "\r\n";
+            for (const auto& item : result_list) {
+                response += "$" + std::to_string(item.length()) + "\r\n" + item + "\r\n";
+            }
         }
     }
     else {

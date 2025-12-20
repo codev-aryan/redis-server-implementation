@@ -215,7 +215,7 @@ void handleResponse(int client_fd)
             start = std::stoi(args[2]);
             stop = std::stoi(args[3]);
         } catch (...) {
-             // Handle parsing error if necessary, default 0 for now
+             // Handle parsing error if necessary
         }
 
         {
@@ -226,11 +226,17 @@ void handleResponse(int client_fd)
                  if (it->second.type != VAL_LIST) {
                     wrong_type = true;
                  } else {
-                    int len = it->second.list_val.size();
+                    int len = static_cast<int>(it->second.list_val.size());
                     
+                    // Handle negative indices
+                    if (start < 0) start = len + start;
+                    if (stop < 0) stop = len + stop;
+
+                    // Normalize bounds
                     if (start < 0) start = 0;
                     if (stop >= len) stop = len - 1;
                     
+                    // Extract range if valid
                     if (start <= stop && start < len) {
                         for (int i = start; i <= stop; ++i) {
                             result_list.push_back(it->second.list_val[i]);

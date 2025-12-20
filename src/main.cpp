@@ -26,7 +26,7 @@ enum ValueType {
 struct Entry {
     ValueType type = VAL_STRING;
     std::string string_val;
-    std::deque<std::string> list_val; // Changed to deque for O(1) front insertion
+    std::deque<std::string> list_val; 
     
     // Expiry timestamp in milliseconds since epoch. 0 indicates no expiry.
     long long expiry_at = 0;
@@ -217,7 +217,6 @@ void handleResponse(int client_fd)
             if (it == kv_store.end()) {
                 Entry entry;
                 entry.type = VAL_LIST;
-                // Prepend elements one by one (effectively reversing order of args)
                 for (size_t i = 2; i < args.size(); ++i) {
                     entry.list_val.push_front(args[i]);
                 }
@@ -251,8 +250,7 @@ void handleResponse(int client_fd)
         try {
             start = std::stoi(args[2]);
             stop = std::stoi(args[3]);
-        } catch (...) {
-        }
+        } catch (...) {}
 
         {
             std::lock_guard<std::mutex> lock(kv_mutex);
@@ -286,6 +284,35 @@ void handleResponse(int client_fd)
             for (const auto& item : result_list) {
                 response += "$" + std::to_string(item.length()) + "\r\n" + item + "\r\n";
             }
+        }
+    }
+    else if (command == "LLEN" && args.size() >= 2) {
+        std::string key = args[1];
+        int len = 0;
+        bool wrong_type = false;
+        long long now = current_time_ms();
+
+        {
+            std::lock_guard<std::mutex> lock(kv_mutex);
+            auto it = kv_store.find(key);
+            
+            if (it != kv_store.end()) {
+                 if (it->second.expiry_at != 0 && now > it->second.expiry_at) {
+                    kv_store.erase(it);
+                 } else {
+                    if (it->second.type != VAL_LIST) {
+                        wrong_type = true;
+                    } else {
+                        len = it->second.list_val.size();
+                    }
+                 }
+            }
+        }
+
+        if (wrong_type) {
+             response = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+        } else {
+             response = ":" + std::to_string(len) + "\r\n";
         }
     }
     else {

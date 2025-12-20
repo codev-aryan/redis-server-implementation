@@ -9,6 +9,7 @@
 #include <netdb.h>
 #include <thread>
 #include <vector>
+#include <deque>
 #include <sstream>
 #include <algorithm>
 #include <unordered_map>
@@ -25,7 +26,7 @@ enum ValueType {
 struct Entry {
     ValueType type = VAL_STRING;
     std::string string_val;
-    std::vector<std::string> list_val;
+    std::deque<std::string> list_val; // Changed to deque for O(1) front insertion
     
     // Expiry timestamp in milliseconds since epoch. 0 indicates no expiry.
     long long expiry_at = 0;
@@ -204,6 +205,42 @@ void handleResponse(int client_fd)
             response = ":" + std::to_string(list_size) + "\r\n";
         }
     }
+    else if (command == "LPUSH" && args.size() >= 3) {
+        std::string key = args[1];
+        int list_size = 0;
+        bool wrong_type = false;
+
+        {
+            std::lock_guard<std::mutex> lock(kv_mutex);
+            auto it = kv_store.find(key);
+            
+            if (it == kv_store.end()) {
+                Entry entry;
+                entry.type = VAL_LIST;
+                // Prepend elements one by one (effectively reversing order of args)
+                for (size_t i = 2; i < args.size(); ++i) {
+                    entry.list_val.push_front(args[i]);
+                }
+                list_size = entry.list_val.size();
+                kv_store[key] = entry;
+            } else {
+                if (it->second.type != VAL_LIST) {
+                    wrong_type = true;
+                } else {
+                    for (size_t i = 2; i < args.size(); ++i) {
+                        it->second.list_val.push_front(args[i]);
+                    }
+                    list_size = it->second.list_val.size();
+                }
+            }
+        }
+
+        if (wrong_type) {
+            response = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+        } else {
+            response = ":" + std::to_string(list_size) + "\r\n";
+        }
+    }
     else if (command == "LRANGE" && args.size() >= 4) {
         std::string key = args[1];
         int start = 0;
@@ -215,7 +252,6 @@ void handleResponse(int client_fd)
             start = std::stoi(args[2]);
             stop = std::stoi(args[3]);
         } catch (...) {
-             // Handle parsing error if necessary
         }
 
         {
@@ -228,15 +264,12 @@ void handleResponse(int client_fd)
                  } else {
                     int len = static_cast<int>(it->second.list_val.size());
                     
-                    // Handle negative indices
                     if (start < 0) start = len + start;
                     if (stop < 0) stop = len + stop;
 
-                    // Normalize bounds
                     if (start < 0) start = 0;
                     if (stop >= len) stop = len - 1;
                     
-                    // Extract range if valid
                     if (start <= stop && start < len) {
                         for (int i = start; i <= stop; ++i) {
                             result_list.push_back(it->second.list_val[i]);

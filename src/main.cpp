@@ -16,19 +16,16 @@
 #include <mutex>
 #include <chrono>
 
-// Enum to distinguish data types
 enum ValueType {
     VAL_STRING,
     VAL_LIST
 };
 
-// Structure to hold value, type, and expiration
 struct Entry {
     ValueType type = VAL_STRING;
     std::string string_val;
     std::deque<std::string> list_val; 
     
-    // Expiry timestamp in milliseconds since epoch. 0 indicates no expiry.
     long long expiry_at = 0;
 };
 
@@ -317,27 +314,40 @@ void handleResponse(int client_fd)
     }
     else if (command == "LPOP" && args.size() >= 2) {
         std::string key = args[1];
-        std::string val;
-        bool found = false;
         bool wrong_type = false;
+        bool key_found = false;
         long long now = current_time_ms();
+        std::vector<std::string> popped_elements;
+        
+        int count = 1;
+        bool is_array_request = false;
+        
+        if (args.size() > 2) {
+            try {
+                count = std::stoi(args[2]);
+                is_array_request = true;
+            } catch (...) {}
+        }
 
         {
             std::lock_guard<std::mutex> lock(kv_mutex);
             auto it = kv_store.find(key);
             
             if (it != kv_store.end()) {
-                 // Check expiry first
                  if (it->second.expiry_at != 0 && now > it->second.expiry_at) {
                     kv_store.erase(it);
                  } else {
                      if (it->second.type != VAL_LIST) {
                         wrong_type = true;
                      } else {
-                        if (!it->second.list_val.empty()) {
-                            val = it->second.list_val.front();
+                        key_found = true;
+                        while (count > 0 && !it->second.list_val.empty()) {
+                            popped_elements.push_back(it->second.list_val.front());
                             it->second.list_val.pop_front();
-                            found = true;
+                            count--;
+                        }
+                        if (it->second.list_val.empty()) {
+                            kv_store.erase(it);
                         }
                      }
                  }
@@ -346,10 +356,23 @@ void handleResponse(int client_fd)
 
         if (wrong_type) {
             response = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
-        } else if (found) {
-            response = "$" + std::to_string(val.length()) + "\r\n" + val + "\r\n";
-        } else {
-            response = "$-1\r\n";
+        } 
+        else if (!key_found) {
+             response = "$-1\r\n";
+        }
+        else {
+            if (is_array_request) {
+                response = "*" + std::to_string(popped_elements.size()) + "\r\n";
+                for (const auto& el : popped_elements) {
+                    response += "$" + std::to_string(el.length()) + "\r\n" + el + "\r\n";
+                }
+            } else {
+                if (popped_elements.empty()) {
+                     response = "$-1\r\n";
+                } else {
+                     response = "$" + std::to_string(popped_elements[0].length()) + "\r\n" + popped_elements[0] + "\r\n";
+                }
+            }
         }
     }
     else {

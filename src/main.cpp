@@ -15,6 +15,9 @@
 #include <unordered_map>
 #include <mutex>
 #include <chrono>
+#include <condition_variable>
+#include <memory>
+#include <queue>
 
 enum ValueType {
     VAL_STRING,
@@ -25,12 +28,18 @@ struct Entry {
     ValueType type = VAL_STRING;
     std::string string_val;
     std::deque<std::string> list_val; 
-    
     long long expiry_at = 0;
 };
 
 std::unordered_map<std::string, Entry> kv_store;
 std::mutex kv_mutex;
+
+struct BlockedClient {
+    std::condition_variable cv;
+    std::string key_waiting_on;
+};
+
+std::unordered_map<std::string, std::queue<std::shared_ptr<BlockedClient>>> blocking_keys;
 
 long long current_time_ms() {
     using namespace std::chrono;
@@ -78,6 +87,13 @@ std::vector<std::string> parse_resp(const std::string& input) {
         pos += str_len + 2; 
     }
     return args;
+}
+
+void notify_blocked_clients(const std::string& key) {
+    if (blocking_keys.find(key) != blocking_keys.end() && !blocking_keys[key].empty()) {
+        auto client = blocking_keys[key].front();
+        client->cv.notify_one(); 
+    }
 }
 
 void handleResponse(int client_fd)
@@ -194,6 +210,7 @@ void handleResponse(int client_fd)
                     list_size = it->second.list_val.size();
                 }
             }
+            notify_blocked_clients(key);
         }
 
         if (wrong_type) {
@@ -229,6 +246,7 @@ void handleResponse(int client_fd)
                     list_size = it->second.list_val.size();
                 }
             }
+            notify_blocked_clients(key);
         }
 
         if (wrong_type) {
@@ -318,7 +336,6 @@ void handleResponse(int client_fd)
         bool key_found = false;
         long long now = current_time_ms();
         std::vector<std::string> popped_elements;
-        
         int count = 1;
         bool is_array_request = false;
         
@@ -372,6 +389,42 @@ void handleResponse(int client_fd)
                 } else {
                      response = "$" + std::to_string(popped_elements[0].length()) + "\r\n" + popped_elements[0] + "\r\n";
                 }
+            }
+        }
+    }
+    else if (command == "BLPOP" && args.size() >= 3) {
+        std::string key = args[1];
+        
+        std::unique_lock<std::mutex> lock(kv_mutex);
+
+        while (true) {
+            auto it = kv_store.find(key);
+            bool has_data = false;
+            std::string val;
+            
+            if (it != kv_store.end() && it->second.type == VAL_LIST && !it->second.list_val.empty()) {
+                val = it->second.list_val.front();
+                it->second.list_val.pop_front();
+                if (it->second.list_val.empty()) {
+                    kv_store.erase(it);
+                }
+                has_data = true;
+            }
+            
+            if (has_data) {
+                response = "*2\r\n$" + std::to_string(key.length()) + "\r\n" + key + "\r\n$" + std::to_string(val.length()) + "\r\n" + val + "\r\n";
+                break;
+            } else {
+                auto my_blocker = std::make_shared<BlockedClient>();
+                my_blocker->key_waiting_on = key;
+                
+                blocking_keys[key].push(my_blocker);
+                my_blocker->cv.wait(lock);
+                
+                if (!blocking_keys[key].empty() && blocking_keys[key].front() == my_blocker) {
+                    blocking_keys[key].pop();
+                }
+                
             }
         }
     }

@@ -39,7 +39,7 @@ struct BlockedClient {
     std::string key_waiting_on;
 };
 
-std::unordered_map<std::string, std::queue<std::shared_ptr<BlockedClient>>> blocking_keys;
+std::unordered_map<std::string, std::queue<std::weak_ptr<BlockedClient>>> blocking_keys;
 
 long long current_time_ms() {
     using namespace std::chrono;
@@ -90,9 +90,19 @@ std::vector<std::string> parse_resp(const std::string& input) {
 }
 
 void notify_blocked_clients(const std::string& key) {
-    if (blocking_keys.find(key) != blocking_keys.end() && !blocking_keys[key].empty()) {
-        auto client = blocking_keys[key].front();
-        client->cv.notify_one(); 
+    if (blocking_keys.find(key) == blocking_keys.end()) return;
+
+    auto& q = blocking_keys[key];
+    while (!q.empty()) {
+        auto weak_client = q.front();
+        auto client = weak_client.lock();
+        
+        if (client) {
+            client->cv.notify_one();
+            break; 
+        } else {
+            q.pop();
+        }
     }
 }
 
@@ -394,37 +404,49 @@ void handleResponse(int client_fd)
     }
     else if (command == "BLPOP" && args.size() >= 3) {
         std::string key = args[1];
-        
-        std::unique_lock<std::mutex> lock(kv_mutex);
+        double timeout_sec = 0.0;
+        try {
+            timeout_sec = std::stod(args[2]);
+        } catch (...) {}
 
-        while (true) {
+        std::unique_lock<std::mutex> lock(kv_mutex);
+        
+        auto should_return = [&]() -> bool {
             auto it = kv_store.find(key);
-            bool has_data = false;
-            std::string val;
+            return (it != kv_store.end() && it->second.type == VAL_LIST && !it->second.list_val.empty());
+        };
+
+        if (should_return()) {
+            auto it = kv_store.find(key);
+            std::string val = it->second.list_val.front();
+            it->second.list_val.pop_front();
+            if (it->second.list_val.empty()) kv_store.erase(it);
             
-            if (it != kv_store.end() && it->second.type == VAL_LIST && !it->second.list_val.empty()) {
-                val = it->second.list_val.front();
-                it->second.list_val.pop_front();
-                if (it->second.list_val.empty()) {
-                    kv_store.erase(it);
-                }
-                has_data = true;
-            }
+            response = "*2\r\n$" + std::to_string(key.length()) + "\r\n" + key + "\r\n$" + std::to_string(val.length()) + "\r\n" + val + "\r\n";
+        } 
+        else {
+            auto my_blocker = std::make_shared<BlockedClient>();
+            my_blocker->key_waiting_on = key;
+            blocking_keys[key].push(my_blocker);
+
+            bool success = false;
             
-            if (has_data) {
-                response = "*2\r\n$" + std::to_string(key.length()) + "\r\n" + key + "\r\n$" + std::to_string(val.length()) + "\r\n" + val + "\r\n";
-                break;
+            if (timeout_sec > 0.0001) {
+                 success = my_blocker->cv.wait_for(lock, std::chrono::duration<double>(timeout_sec), should_return);
             } else {
-                auto my_blocker = std::make_shared<BlockedClient>();
-                my_blocker->key_waiting_on = key;
-                
-                blocking_keys[key].push(my_blocker);
-                my_blocker->cv.wait(lock);
-                
-                if (!blocking_keys[key].empty() && blocking_keys[key].front() == my_blocker) {
-                    blocking_keys[key].pop();
-                }
-                
+                my_blocker->cv.wait(lock, should_return);
+                success = true;
+            }
+
+            if (success) {
+                auto it = kv_store.find(key);
+                std::string val = it->second.list_val.front();
+                it->second.list_val.pop_front();
+                if (it->second.list_val.empty()) kv_store.erase(it);
+
+                response = "*2\r\n$" + std::to_string(key.length()) + "\r\n" + key + "\r\n$" + std::to_string(val.length()) + "\r\n" + val + "\r\n";
+            } else {
+                response = "*-1\r\n";
             }
         }
     }

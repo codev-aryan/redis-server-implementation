@@ -29,6 +29,7 @@ struct Entry {
     std::string string_val;
     std::deque<std::string> list_val; 
     long long expiry_at = 0;
+    int value = 0;
 };
 
 std::unordered_map<std::string, Entry> kv_store;
@@ -448,6 +449,31 @@ void handleResponse(int client_fd)
             } else {
                 response = "*-1\r\n";
             }
+        }
+    }
+    else if (command == "INCR" && args.size() >= 2  ){
+        std::string key = args[1];
+        int val = 0;
+        bool wrong_type = false;
+        {
+            std::lock_guard<std::mutex> lock(kv_mutex);
+            auto it = kv_store.find(key);
+
+            if (it != kv_store.end()){
+                if (it->second.type == VAL_STRING){
+                    val = std::stoi(it->second.string_val);
+                    val++;
+                    it->second.string_val = std::to_string(val);    
+                }
+                else{
+                    wrong_type = true;
+                }
+            }
+        }
+        if (wrong_type) {
+             response = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+        } else {
+             response = ":" + std::to_string(val) + "\r\n";
         }
     }
     else {

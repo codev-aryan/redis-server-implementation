@@ -193,6 +193,52 @@ void handleResponse(int client_fd)
           response = "$-1\r\n";
       }
     }
+    else if (command == "INCR" && args.size() >= 2) {
+        std::string key = args[1];
+        long long val_int = 0;
+        bool error = false;
+        std::string err_msg;
+        long long now = current_time_ms();
+
+        {
+            std::lock_guard<std::mutex> lock(kv_mutex);
+            auto it = kv_store.find(key);
+            
+            bool exists = (it != kv_store.end());
+            if (exists && it->second.expiry_at != 0 && now > it->second.expiry_at) {
+                kv_store.erase(it);
+                exists = false;
+            }
+
+            if (exists) {
+                if (it->second.type != VAL_STRING) {
+                    error = true;
+                    err_msg = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+                } else {
+                    try {
+                        val_int = std::stoll(it->second.string_val);
+                        val_int++;
+                        it->second.string_val = std::to_string(val_int);
+                    } catch (...) {
+                        error = true;
+                        err_msg = "-ERR value is not an integer or out of range\r\n";
+                    }
+                }
+            } else {
+                val_int = 1;
+                Entry entry;
+                entry.type = VAL_STRING;
+                entry.string_val = "1";
+                kv_store[key] = entry;
+            }
+        }
+
+        if (error) {
+            response = err_msg;
+        } else {
+            response = ":" + std::to_string(val_int) + "\r\n";
+        }
+    }
     else if (command == "RPUSH" && args.size() >= 3) {
         std::string key = args[1];
         int list_size = 0;
@@ -448,36 +494,6 @@ void handleResponse(int client_fd)
             } else {
                 response = "*-1\r\n";
             }
-        }
-    }
-    else if (command == "INCR" && args.size() >= 2  ){
-        std::string key = args[1];
-        long long val = 1;
-        bool wrong_type = false;
-        {
-            std::lock_guard<std::mutex> lock(kv_mutex);
-            auto it = kv_store.find(key);
-
-            if (it != kv_store.end()){
-                if (it->second.type == VAL_STRING){
-                    val = std::stoi(it->second.string_val);
-                    val++;
-                    it->second.string_val = std::to_string(val);    
-                }
-                else{
-                    wrong_type = true;
-                }
-            }
-            else{
-                Entry entry;
-                entry.string_val = std::to_string(val);
-                kv_store[key] = entry;
-            }
-        }
-        if (wrong_type) {
-             response = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
-        } else {
-             response = ":" + std::to_string(val) + "\r\n";
         }
     }
     else {

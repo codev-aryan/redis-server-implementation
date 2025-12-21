@@ -29,7 +29,6 @@ struct Entry {
     std::string string_val;
     std::deque<std::string> list_val; 
     long long expiry_at = 0;
-    int value = 0;
 };
 
 std::unordered_map<std::string, Entry> kv_store;
@@ -453,7 +452,7 @@ void handleResponse(int client_fd)
     }
     else if (command == "INCR" && args.size() >= 2  ){
         std::string key = args[1];
-        int val = 0;
+        long long val = 1;
         bool wrong_type = false;
         {
             std::lock_guard<std::mutex> lock(kv_mutex);
@@ -468,6 +467,11 @@ void handleResponse(int client_fd)
                 else{
                     wrong_type = true;
                 }
+            }
+            else{
+                Entry entry;
+                entry.string_val = std::to_string(val);
+                kv_store[key] = entry;
             }
         }
         if (wrong_type) {

@@ -142,6 +142,14 @@ void handleResponse(int client_fd)
       in_multi = true; 
       response = "+OK\r\n";
     }
+    else if (command == "EXEC") {
+      if (!in_multi) {
+          response = "-ERR EXEC without MULTI\r\n";
+      } else {
+          in_multi = false;
+          response = "*0\r\n"; 
+      }
+    }
     else if (command == "SET" && args.size() >= 3) {
       std::string key = args[1];
       std::string val = args[2];

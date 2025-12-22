@@ -106,56 +106,13 @@ void notify_blocked_clients(const std::string& key) {
     }
 }
 
-void handleResponse(int client_fd)
-{
-  char buffer[1024];
-  
-  bool in_multi = false;
-  std::vector<std::vector<std::string>> transaction_queue;
-
-  while (true)
-  {
-    memset(buffer, 0, sizeof(buffer));
-    int num_bytes = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
+std::string execute_command(const std::vector<std::string>& args) {
+    if (args.empty()) return "";
     
-    if (num_bytes <= 0)
-    {
-      close(client_fd);
-      return;
-    }
-
-    std::string request(buffer, num_bytes);
-    std::vector<std::string> args = parse_resp(request);
-
-    if (args.empty()) continue;
-
     std::string command = to_upper(args[0]);
     std::string response;
 
-    if (command == "MULTI") {
-      if (in_multi){
-        response = "-ERR MULTI calls can not be nested\r\n";
-      }
-      else{
-        in_multi = true;
-        transaction_queue.clear();
-        response = "+OK\r\n";
-      }
-    }
-    else if (command == "EXEC") {
-      if (!in_multi) {
-          response = "-ERR EXEC without MULTI\r\n";
-      } else {
-          in_multi = false;
-          transaction_queue.clear();
-          response = "*0\r\n"; 
-      }
-    }
-    else if (in_multi){
-        transaction_queue.push_back(args);
-        response = "+QUEUED\r\n";
-    }
-    else if (command == "PING") {
+    if (command == "PING") {
       response = "+PONG\r\n";
     } 
     else if (command == "ECHO" && args.size() > 1) {
@@ -524,6 +481,67 @@ void handleResponse(int client_fd)
     }
     else {
         response = "-ERR unknown command\r\n";
+    }
+    return response;
+}
+
+void handleResponse(int client_fd)
+{
+  char buffer[1024];
+  
+  bool in_multi = false;
+  std::vector<std::vector<std::string>> transaction_queue;
+
+  while (true)
+  {
+    memset(buffer, 0, sizeof(buffer));
+    int num_bytes = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
+    
+    if (num_bytes <= 0)
+    {
+      close(client_fd);
+      return;
+    }
+
+    std::string request(buffer, num_bytes);
+    std::vector<std::string> args = parse_resp(request);
+
+    if (args.empty()) continue;
+
+    std::string command = to_upper(args[0]);
+    std::string response;
+    
+    if (command == "MULTI") {
+      if (in_multi) {
+          response = "-ERR MULTI calls can not be nested\r\n";
+      } else {
+          in_multi = true;
+          transaction_queue.clear();
+          response = "+OK\r\n";
+      }
+    }
+    else if (command == "EXEC") {
+      if (!in_multi) {
+          response = "-ERR EXEC without MULTI\r\n";
+      } else {
+          if (transaction_queue.empty()) {
+               response = "*0\r\n";
+          } else {
+               response = "*" + std::to_string(transaction_queue.size()) + "\r\n";
+               for (const auto& queued_args : transaction_queue) {
+                   response += execute_command(queued_args);
+               }
+          }
+          transaction_queue.clear();
+          in_multi = false; 
+      }
+    }
+    else if (in_multi) {
+        transaction_queue.push_back(args);
+        response = "+QUEUED\r\n";
+    }
+    else {
+        response = execute_command(args);
     }
 
     send(client_fd, response.c_str(), response.size(), 0);

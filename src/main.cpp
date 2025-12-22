@@ -533,8 +533,17 @@ void handleResponse(int client_fd)
                }
           }
           transaction_queue.clear();
-          in_multi = false; 
+          in_multi = false;
       }
+    }
+    else if (command == "DISCARD") {
+        if (!in_multi) {
+            response = "-ERR DISCARD without MULTI\r\n";
+        } else {
+            in_multi = false;
+            transaction_queue.clear();
+            response = "+OK\r\n";
+        }
     }
     else if (in_multi) {
         transaction_queue.push_back(args);

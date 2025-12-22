@@ -111,6 +111,7 @@ void handleResponse(int client_fd)
   char buffer[1024];
   
   bool in_multi = false;
+  std::vector<std::vector<std::string>> transaction_queue;
 
   while (true)
   {
@@ -131,24 +132,31 @@ void handleResponse(int client_fd)
     std::string command = to_upper(args[0]);
     std::string response;
 
-    if (command == "PING") {
-      response = "+PONG\r\n";
-    } 
-    else if (command == "ECHO" && args.size() > 1) {
-      std::string arg = args[1];
-      response = "$" + std::to_string(arg.length()) + "\r\n" + arg + "\r\n";
-    }
-    else if (command == "MULTI") {
-      in_multi = true; 
-      response = "+OK\r\n";
+    if (command == "MULTI") {
+      if (in_multi){
+        response = "-ERR MULTI calls can not be nested\r\n";
+      }
+      else{
+        in_multi = true;
+        transaction_queue.clear();
+        response = "+OK\r\n";
+      }
     }
     else if (command == "EXEC") {
       if (!in_multi) {
           response = "-ERR EXEC without MULTI\r\n";
       } else {
           in_multi = false;
+          transaction_queue.clear();
           response = "*0\r\n"; 
       }
+    }
+    else if (command == "PING") {
+      response = "+PONG\r\n";
+    } 
+    else if (command == "ECHO" && args.size() > 1) {
+      std::string arg = args[1];
+      response = "$" + std::to_string(arg.length()) + "\r\n" + arg + "\r\n";
     }
     else if (command == "SET" && args.size() >= 3) {
       std::string key = args[1];

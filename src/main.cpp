@@ -151,6 +151,10 @@ void handleResponse(int client_fd)
           response = "*0\r\n"; 
       }
     }
+    else if (in_multi){
+        transaction_queue.push_back(args);
+        response = "+QUEUED\r\n";
+    }
     else if (command == "PING") {
       response = "+PONG\r\n";
     } 

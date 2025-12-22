@@ -109,6 +109,8 @@ void notify_blocked_clients(const std::string& key) {
 void handleResponse(int client_fd)
 {
   char buffer[1024];
+  
+  bool in_multi = false;
 
   while (true)
   {
@@ -135,6 +137,10 @@ void handleResponse(int client_fd)
     else if (command == "ECHO" && args.size() > 1) {
       std::string arg = args[1];
       response = "$" + std::to_string(arg.length()) + "\r\n" + arg + "\r\n";
+    }
+    else if (command == "MULTI") {
+      in_multi = true; 
+      response = "+OK\r\n";
     }
     else if (command == "SET" && args.size() >= 3) {
       std::string key = args[1];

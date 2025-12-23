@@ -1,10 +1,9 @@
 #pragma once
 #include "../object.hpp"
 #include <string>
-#include <utility>
-#include <iterator>
-#include <algorithm>
 #include <vector>
+#include <iterator>
+#include <utility>
 
 class RedisZSet {
 public:
@@ -32,18 +31,33 @@ public:
         const auto& dict = entry.zset_val.dict;
         auto it_dict = dict.find(member);
         
-        if (it_dict == dict.end()) {
-            return -1;
-        }
+        if (it_dict == dict.end()) return -1;
 
         double score = it_dict->second;
         const auto& tree = entry.zset_val.tree;
- 
         auto it_tree = tree.find({score, member});
-        if (it_tree == tree.end()) {
-            return -1;
-        }
+        
+        if (it_tree == tree.end()) return -1;
 
         return std::distance(tree.begin(), it_tree);
+    }
+
+    static std::vector<std::string> range(const Entry& entry, int start, int stop) {
+        std::vector<std::string> result;
+        const auto& tree = entry.zset_val.tree;
+        int size = static_cast<int>(tree.size());
+
+        if (start < 0) start = 0;
+        if (stop >= size) stop = size - 1;
+        if (start > stop || start >= size) return result;
+
+        auto it = tree.begin();
+        std::advance(it, start);
+
+        for (int i = start; i <= stop; ++i) {
+            result.push_back(it->second);
+            it++;
+        }
+        return result;
     }
 };

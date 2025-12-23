@@ -2,6 +2,7 @@
 #include "cmd_admin.hpp"
 #include "cmd_strings.hpp"
 #include "cmd_lists.hpp"
+#include "cmd_zset.hpp"
 #include "cmd_tx.hpp"
 #include "../utils/utils.hpp"
 #include "../server/client.hpp"
@@ -34,6 +35,9 @@ std::string Dispatcher::execute_command(Database& db, std::shared_ptr<Client> cl
     else if (command == "RPUSH" || command == "LPUSH" || command == "LRANGE" || 
              command == "LLEN" || command == "LPOP" || command == "BLPOP") {
         return ListCommands::handle(db, client, args);
+    }
+    else if (command == "ZADD") {
+        return ZSetCommands::handle(db, args);
     }
     
     return "-ERR unknown command\r\n";

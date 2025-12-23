@@ -1,9 +1,9 @@
 #pragma once
 #include <string>
 #include <deque>
-#include <map>
-#include <set>
 #include <vector>
+#include <unordered_map>
+#include <set>
 
 enum ValueType {
     VAL_STRING,
@@ -11,11 +11,15 @@ enum ValueType {
     VAL_ZSET
 };
 
+struct ZSet {
+    std::unordered_map<std::string, double> dict;
+    std::set<std::pair<double, std::string>> tree;
+};
+
 struct Entry {
     ValueType type = VAL_STRING;
     std::string string_val;
     std::deque<std::string> list_val; 
-    std::map<std::string, double> zset_map;
-    std::set<std::pair<double, std::string>> zset_sorted;
+    ZSet zset_val;
     long long expiry_at = 0;
 };

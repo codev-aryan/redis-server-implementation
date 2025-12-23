@@ -1,16 +1,26 @@
 cmake_minimum_required(VERSION 3.13)
-
 project(redis-starter-cpp)
 
-file(GLOB_RECURSE SOURCE_FILES src/*.cpp)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(CMAKE_CXX_STANDARD 23) # Enable the C++23 standard
-set(THREADS_PREFER_PTHREAD_FLAG ON)
+include_directories(src)
+
+set(SOURCE_FILES
+    src/main.cpp
+    src/utils/utils.cpp
+    src/protocol/parser.cpp
+    src/db/database.cpp
+    src/server/server.cpp
+    src/server/client.cpp
+    src/commands/dispatcher.cpp
+    src/commands/cmd_admin.cpp
+    src/commands/cmd_strings.cpp
+    src/commands/cmd_lists.cpp
+    src/commands/cmd_tx.cpp
+)
 
 find_package(Threads REQUIRED)
-find_package(asio CONFIG REQUIRED)
 
 add_executable(redis ${SOURCE_FILES})
-
-target_link_libraries(redis PRIVATE asio asio::asio)
 target_link_libraries(redis PRIVATE Threads::Threads)

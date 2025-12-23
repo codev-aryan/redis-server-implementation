@@ -53,7 +53,7 @@ public:
         if (start < 0) start = 0;
         if (stop >= size) stop = size - 1;
         if (stop < 0) stop = 0;
-        
+
         if (start > stop || start >= size) return result;
 
         auto it = tree.begin();
@@ -64,5 +64,9 @@ public:
             it++;
         }
         return result;
+    }
+    
+    static int size(const Entry& entry) {
+        return static_cast<int>(entry.zset_val.tree.size());
     }
 };

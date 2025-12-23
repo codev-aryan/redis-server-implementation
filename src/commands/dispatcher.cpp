@@ -36,7 +36,7 @@ std::string Dispatcher::execute_command(Database& db, std::shared_ptr<Client> cl
              command == "LLEN" || command == "LPOP" || command == "BLPOP") {
         return ListCommands::handle(db, client, args);
     }
-    else if (command == "ZADD" || command == "ZRANK" || command == "ZRANGE") {
+    else if (command == "ZADD" || command == "ZRANK" || command == "ZRANGE" || command == "ZCARD") {
         return ZSetCommands::handle(db, args);
     }
     

@@ -101,6 +101,24 @@ std::string ZSetCommands::handle(Database& db, const std::vector<std::string>& a
             }
         }
     }
+    else if (command == "ZCARD") {
+        if (args.size() < 2) return "-ERR wrong number of arguments for 'zcard' command\r\n";
+        std::string key = args[1];
+        int count = 0;
+        bool wrong_type = false;
+
+        {
+            std::lock_guard<std::mutex> lock(db.kv_mutex);
+            auto it = db.kv_store.find(key);
+            if (it != db.kv_store.end()) {
+                 if (it->second.type != VAL_ZSET) wrong_type = true;
+                 else count = RedisZSet::size(it->second);
+            }
+        }
+
+        if (wrong_type) response = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+        else response = ":" + std::to_string(count) + "\r\n";
+    }
     else {
          response = "-ERR unknown command\r\n";
     }

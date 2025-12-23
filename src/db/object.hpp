@@ -4,6 +4,7 @@
 #include <vector>
 #include <unordered_map>
 #include <set>
+#include <utility>
 
 enum ValueType {
     VAL_STRING,
@@ -11,9 +12,19 @@ enum ValueType {
     VAL_ZSET
 };
 
+struct ScoreMemberCompare {
+    bool operator()(const std::pair<double, std::string>& a, 
+                    const std::pair<double, std::string>& b) const {
+        if (a.first != b.first) {
+            return a.first < b.first;
+        }
+        return a.second < b.second;
+    }
+};
+
 struct ZSet {
     std::unordered_map<std::string, double> dict;
-    std::set<std::pair<double, std::string>> tree;
+    std::set<std::pair<double, std::string>, ScoreMemberCompare> tree;
 };
 
 struct Entry {

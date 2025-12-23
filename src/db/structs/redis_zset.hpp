@@ -3,6 +3,8 @@
 #include <string>
 #include <utility>
 #include <iterator>
+#include <algorithm>
+#include <vector>
 
 class RedisZSet {
 public:

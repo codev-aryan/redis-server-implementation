@@ -2,6 +2,8 @@
 #include "../utils/utils.hpp"
 #include "../db/structs/redis_zset.hpp"
 #include <iostream>
+#include <vector>
+#include <string>
 
 std::string ZSetCommands::handle(Database& db, const std::vector<std::string>& args) {
     std::string command = to_upper(args[0]);

@@ -47,8 +47,13 @@ public:
         const auto& tree = entry.zset_val.tree;
         int size = static_cast<int>(tree.size());
 
+        if (start < 0) start = size + start;
+        if (stop < 0) stop = size + stop;
+
         if (start < 0) start = 0;
         if (stop >= size) stop = size - 1;
+        if (stop < 0) stop = 0;
+        
         if (start > stop || start >= size) return result;
 
         auto it = tree.begin();

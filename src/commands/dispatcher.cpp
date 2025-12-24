@@ -3,6 +3,7 @@
 #include "cmd_strings.hpp"
 #include "cmd_lists.hpp"
 #include "cmd_zset.hpp"
+#include "cmd_geo.hpp"
 #include "cmd_tx.hpp"
 #include "../utils/utils.hpp"
 #include "../server/client.hpp"
@@ -39,6 +40,9 @@ std::string Dispatcher::execute_command(Database& db, std::shared_ptr<Client> cl
     else if (command == "ZADD" || command == "ZRANK" || command == "ZRANGE" || 
              command == "ZCARD" || command == "ZSCORE" || command == "ZREM") {
         return ZSetCommands::handle(db, args);
+    }
+    else if (command == "GEOADD") {
+        return GeoCommands::handle(db, args);
     }
     
     return "-ERR unknown command\r\n";

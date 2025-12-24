@@ -18,6 +18,7 @@ set(SOURCE_FILES
     src/commands/cmd_strings.cpp
     src/commands/cmd_lists.cpp
     src/commands/cmd_zset.cpp
+    src/commands/cmd_geo.cpp
     src/commands/cmd_tx.cpp
 )
 

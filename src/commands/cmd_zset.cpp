@@ -4,16 +4,11 @@
 #include <iostream>
 #include <iomanip>
 #include <sstream>
-
+#include <cstdio>
 std::string format_score(double value) {
-    std::string str = std::to_string(value);
-    if (str.find('.') != std::string::npos) {
-        str.erase(str.find_last_not_of('0') + 1, std::string::npos);
-        if (str.back() == '.') {
-            str.pop_back();
-        }
-    }
-    return str;
+    char buffer[128];
+    std::snprintf(buffer, sizeof(buffer), "%.17g", value);
+    return std::string(buffer);
 }
 
 std::string ZSetCommands::handle(Database& db, const std::vector<std::string>& args) {

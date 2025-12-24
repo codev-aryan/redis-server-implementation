@@ -9,6 +9,7 @@ include_directories(src)
 set(SOURCE_FILES
     src/main.cpp
     src/utils/utils.cpp
+    src/utils/geohash.cpp
     src/protocol/parser.cpp
     src/db/database.cpp
     src/server/server.cpp

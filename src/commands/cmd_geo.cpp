@@ -1,5 +1,6 @@
 #include "cmd_geo.hpp"
 #include "../utils/utils.hpp"
+#include "../utils/geohash.hpp"
 #include "../db/structs/redis_zset.hpp"
 #include <string>
 #include <vector>
@@ -42,7 +43,7 @@ std::string GeoCommands::handle(Database& db, const std::vector<std::string>& ar
         {
             std::lock_guard<std::mutex> lock(db.kv_mutex);
             auto it = db.kv_store.find(key);
-
+            
             if (it == db.kv_store.end()) {
                 Entry entry;
                 entry.type = VAL_ZSET;
@@ -54,8 +55,11 @@ std::string GeoCommands::handle(Database& db, const std::vector<std::string>& ar
                 wrong_type = true;
             } else {
                 for (size_t i = 2; i < args.size(); i += 3) {
-                    double score = 0.0; 
+                    double longitude = std::stod(args[i]);
+                    double latitude = std::stod(args[i+1]);
                     std::string member = args[i+2];
+                
+                    double score = GeoHash::encode(latitude, longitude);
 
                     added_count += RedisZSet::add(it->second, score, member);
                 }

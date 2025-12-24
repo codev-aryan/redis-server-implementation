@@ -1,5 +1,6 @@
 #include "cmd_geo.hpp"
 #include "../utils/utils.hpp"
+#include "../db/structs/redis_zset.hpp"
 #include <string>
 #include <vector>
 
@@ -33,7 +34,39 @@ std::string GeoCommands::handle(Database& db, const std::vector<std::string>& ar
                 return "-ERR invalid latitude\r\n";
             }
         }
-        return ":1\r\n";
+
+        std::string key = args[1];
+        int added_count = 0;
+        bool wrong_type = false;
+
+        {
+            std::lock_guard<std::mutex> lock(db.kv_mutex);
+            auto it = db.kv_store.find(key);
+
+            if (it == db.kv_store.end()) {
+                Entry entry;
+                entry.type = VAL_ZSET;
+                db.kv_store[key] = entry;
+                it = db.kv_store.find(key);
+            }
+
+            if (it->second.type != VAL_ZSET) {
+                wrong_type = true;
+            } else {
+                for (size_t i = 2; i < args.size(); i += 3) {
+                    double score = 0.0; 
+                    std::string member = args[i+2];
+
+                    added_count += RedisZSet::add(it->second, score, member);
+                }
+            }
+        }
+
+        if (wrong_type) {
+            return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+        }
+        
+        return ":" + std::to_string(added_count) + "\r\n";
     }
     
     return "-ERR unknown command\r\n";

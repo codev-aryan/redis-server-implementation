@@ -4,6 +4,7 @@
 #include "../db/structs/redis_zset.hpp"
 #include <string>
 #include <vector>
+#include <optional>
 
 std::string GeoCommands::handle(Database& db, const std::vector<std::string>& args) {
     std::string command = to_upper(args[0]);
@@ -58,7 +59,7 @@ std::string GeoCommands::handle(Database& db, const std::vector<std::string>& ar
                     double longitude = std::stod(args[i]);
                     double latitude = std::stod(args[i+1]);
                     std::string member = args[i+2];
-                
+
                     double score = GeoHash::encode(latitude, longitude);
 
                     added_count += RedisZSet::add(it->second, score, member);
@@ -71,6 +72,51 @@ std::string GeoCommands::handle(Database& db, const std::vector<std::string>& ar
         }
         
         return ":" + std::to_string(added_count) + "\r\n";
+    }
+    else if (command == "GEOPOS") {
+        if (args.size() < 2) {
+            return "-ERR wrong number of arguments for 'geopos' command\r\n";
+        }
+
+        std::string key = args[1];
+        std::vector<std::string> results;
+        bool wrong_type = false;
+
+        {
+            std::lock_guard<std::mutex> lock(db.kv_mutex);
+            auto it = db.kv_store.find(key);
+            
+            if (it != db.kv_store.end() && it->second.type != VAL_ZSET) {
+                wrong_type = true;
+            } else {
+                for (size_t i = 2; i < args.size(); ++i) {
+                    std::string member = args[i];
+                    bool exists = false;
+
+                    if (it != db.kv_store.end()) {
+                        if (RedisZSet::get_score(it->second, member).has_value()) {
+                            exists = true;
+                        }
+                    }
+
+                    if (exists) {
+                        results.push_back("*2\r\n$1\r\n0\r\n$1\r\n0\r\n");
+                    } else {
+                        results.push_back("*-1\r\n");
+                    }
+                }
+            }
+        }
+
+        if (wrong_type) {
+            return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+        }
+
+        std::string response = "*" + std::to_string(results.size()) + "\r\n";
+        for (const auto& res : results) {
+            response += res;
+        }
+        return response;
     }
     
     return "-ERR unknown command\r\n";

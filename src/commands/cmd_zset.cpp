@@ -2,6 +2,19 @@
 #include "../utils/utils.hpp"
 #include "../db/structs/redis_zset.hpp"
 #include <iostream>
+#include <iomanip>
+#include <sstream>
+
+std::string format_score(double value) {
+    std::string str = std::to_string(value);
+    if (str.find('.') != std::string::npos) {
+        str.erase(str.find_last_not_of('0') + 1, std::string::npos);
+        if (str.back() == '.') {
+            str.pop_back();
+        }
+    }
+    return str;
+}
 
 std::string ZSetCommands::handle(Database& db, const std::vector<std::string>& args) {
     std::string command = to_upper(args[0]);
@@ -82,13 +95,9 @@ std::string ZSetCommands::handle(Database& db, const std::vector<std::string>& a
         {
             std::lock_guard<std::mutex> lock(db.kv_mutex);
             auto it = db.kv_store.find(key);
-            
             if (it != db.kv_store.end()) {
-                if (it->second.type != VAL_ZSET) {
-                    wrong_type = true;
-                } else {
-                    members = RedisZSet::range(it->second, start, stop);
-                }
+                if (it->second.type != VAL_ZSET) wrong_type = true;
+                else members = RedisZSet::range(it->second, start, stop);
             }
         }
 
@@ -118,6 +127,31 @@ std::string ZSetCommands::handle(Database& db, const std::vector<std::string>& a
 
         if (wrong_type) response = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
         else response = ":" + std::to_string(count) + "\r\n";
+    }
+    else if (command == "ZSCORE") {
+        if (args.size() < 3) return "-ERR wrong number of arguments for 'zscore' command\r\n";
+        std::string key = args[1];
+        std::string member = args[2];
+        std::optional<double> score;
+        bool wrong_type = false;
+
+        {
+            std::lock_guard<std::mutex> lock(db.kv_mutex);
+            auto it = db.kv_store.find(key);
+            if (it != db.kv_store.end()) {
+                if (it->second.type != VAL_ZSET) wrong_type = true;
+                else score = RedisZSet::get_score(it->second, member);
+            }
+        }
+
+        if (wrong_type) {
+             response = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+        } else if (score.has_value()) {
+             std::string score_str = format_score(score.value());
+             response = "$" + std::to_string(score_str.length()) + "\r\n" + score_str + "\r\n";
+        } else {
+             response = "$-1\r\n";
+        }
     }
     else {
          response = "-ERR unknown command\r\n";

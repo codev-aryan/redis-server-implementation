@@ -4,6 +4,7 @@
 #include <vector>
 #include <iterator>
 #include <utility>
+#include <optional>
 
 class RedisZSet {
 public:
@@ -51,8 +52,8 @@ public:
         if (stop < 0) stop = size + stop;
 
         if (start < 0) start = 0;
+        if (stop < 0) stop = 0; 
         if (stop >= size) stop = size - 1;
-        if (stop < 0) stop = 0;
 
         if (start > stop || start >= size) return result;
 
@@ -65,8 +66,17 @@ public:
         }
         return result;
     }
-    
+
     static int size(const Entry& entry) {
         return static_cast<int>(entry.zset_val.tree.size());
+    }
+
+    static std::optional<double> get_score(const Entry& entry, const std::string& member) {
+        const auto& dict = entry.zset_val.dict;
+        auto it = dict.find(member);
+        if (it != dict.end()) {
+            return it->second;
+        }
+        return std::nullopt;
     }
 };

@@ -28,6 +28,21 @@ public:
         }
     }
 
+    static int remove(Entry& entry, const std::string& member) {
+        auto& dict = entry.zset_val.dict;
+        auto& tree = entry.zset_val.tree;
+
+        auto it = dict.find(member);
+        if (it == dict.end()) {
+            return 0;
+        }
+
+        double score = it->second;
+        tree.erase({score, member});
+        dict.erase(it);
+        return 1;
+    }
+
     static long long rank(const Entry& entry, const std::string& member) {
         const auto& dict = entry.zset_val.dict;
         auto it_dict = dict.find(member);

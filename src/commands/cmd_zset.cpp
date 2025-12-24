@@ -4,7 +4,8 @@
 #include <iostream>
 #include <iomanip>
 #include <sstream>
-#include <cstdio>
+#include <cstdio> 
+
 std::string format_score(double value) {
     char buffer[128];
     std::snprintf(buffer, sizeof(buffer), "%.17g", value);
@@ -19,6 +20,7 @@ std::string ZSetCommands::handle(Database& db, const std::vector<std::string>& a
         if (args.size() < 4 || (args.size() - 2) % 2 != 0) {
              return "-ERR wrong number of arguments for 'zadd' command\r\n";
         }
+        
         std::string key = args[1];
         int added_count = 0;
         bool wrong_type = false;
@@ -146,6 +148,35 @@ std::string ZSetCommands::handle(Database& db, const std::vector<std::string>& a
              response = "$" + std::to_string(score_str.length()) + "\r\n" + score_str + "\r\n";
         } else {
              response = "$-1\r\n";
+        }
+    }
+    else if (command == "ZREM") {
+        if (args.size() < 3) return "-ERR wrong number of arguments for 'zrem' command\r\n";
+        std::string key = args[1];
+        int removed_count = 0;
+        bool wrong_type = false;
+
+        {
+            std::lock_guard<std::mutex> lock(db.kv_mutex);
+            auto it = db.kv_store.find(key);
+            if (it != db.kv_store.end()) {
+                if (it->second.type != VAL_ZSET) {
+                    wrong_type = true;
+                } else {
+                    for (size_t i = 2; i < args.size(); ++i) {
+                        removed_count += RedisZSet::remove(it->second, args[i]);
+                    }
+                    if (RedisZSet::size(it->second) == 0) {
+                        db.kv_store.erase(it);
+                    }
+                }
+            }
+        }
+
+        if (wrong_type) {
+             response = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+        } else {
+             response = ":" + std::to_string(removed_count) + "\r\n";
         }
     }
     else {

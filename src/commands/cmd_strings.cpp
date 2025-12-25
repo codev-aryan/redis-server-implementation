@@ -2,6 +2,7 @@
 #include "../utils/utils.hpp"
 #include "../db/structs/redis_string.hpp" 
 #include <stdexcept>
+#include <iostream>
 
 std::string StringCommands::handle(Database& db, const std::vector<std::string>& args) {
     std::string command = to_upper(args[0]);
@@ -26,7 +27,7 @@ std::string StringCommands::handle(Database& db, const std::vector<std::string>&
         {
             std::lock_guard<std::mutex> lock(db.kv_mutex);
             Entry entry;
-            RedisString::set(entry, val); // Use Helper
+            RedisString::set(entry, val);
             entry.expiry_at = expiry;
             db.kv_store[key] = entry;
         }
@@ -79,10 +80,12 @@ std::string StringCommands::handle(Database& db, const std::vector<std::string>&
                 } else {
                     new_val = RedisString::incr(it->second);
                 }
-            } catch (const std::logic_error&) {
-                error_msg = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
-            } catch (const std::domain_error&) {
+            } 
+            catch (const std::domain_error&) {
                 error_msg = "-ERR value is not an integer or out of range\r\n";
+            } 
+            catch (const std::logic_error&) {
+                error_msg = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
             }
         }
 

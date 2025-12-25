@@ -15,6 +15,7 @@ std::string GeoCommands::handle(Database& db, const std::vector<std::string>& ar
             return "-ERR wrong number of arguments for 'geoadd' command\r\n";
         }
 
+        // 1. Validation Pass
         for (size_t i = 2; i < args.size(); i += 3) {
             std::string long_str = args[i];
             std::string lat_str = args[i+1];
@@ -38,6 +39,7 @@ std::string GeoCommands::handle(Database& db, const std::vector<std::string>& ar
             }
         }
 
+        // 2. Storage Pass
         std::string key = args[1];
         int added_count = 0;
         bool wrong_type = false;
@@ -127,6 +129,51 @@ std::string GeoCommands::handle(Database& db, const std::vector<std::string>& ar
             response += res;
         }
         return response;
+    }
+    else if (command == "GEODIST") {
+        if (args.size() < 4) {
+            return "-ERR wrong number of arguments for 'geodist' command\r\n";
+        }
+
+        std::string key = args[1];
+        std::string member1 = args[2];
+        std::string member2 = args[3];
+
+        std::optional<double> score1, score2;
+        bool wrong_type = false;
+
+        {
+            std::lock_guard<std::mutex> lock(db.kv_mutex);
+            auto it = db.kv_store.find(key);
+            
+            if (it != db.kv_store.end()) {
+                if (it->second.type != VAL_ZSET) {
+                    wrong_type = true;
+                } else {
+                    score1 = RedisZSet::get_score(it->second, member1);
+                    score2 = RedisZSet::get_score(it->second, member2);
+                }
+            }
+        }
+
+        if (wrong_type) {
+             return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+        }
+
+        if (!score1.has_value() || !score2.has_value()) {
+            return "$-1\r\n";
+        }
+
+        auto coord1 = GeoHash::decode(score1.value());
+        auto coord2 = GeoHash::decode(score2.value());
+
+        double dist = GeoHash::distance(coord1.first, coord1.second, coord2.first, coord2.second);
+
+        char dist_buf[64];
+        std::snprintf(dist_buf, sizeof(dist_buf), "%.4f", dist);
+        std::string dist_str(dist_buf);
+
+        return "$" + std::to_string(dist_str.length()) + "\r\n" + dist_str + "\r\n";
     }
     
     return "-ERR unknown command\r\n";

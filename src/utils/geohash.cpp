@@ -8,6 +8,10 @@ const double GEO_LAT_MAX = 85.05112878;
 const double GEO_LONG_MIN = -180.0;
 const double GEO_LONG_MAX = 180.0;
 
+// Earth Radius in meters (specified by instructions)
+const double EARTH_RADIUS_M = 6372797.560856;
+const double PI = 3.14159265358979323846;
+
 // Spread bits: xxxxxxxx -> x0x0x0x0x0x0x0x0
 uint64_t GeoHash::interleave64(uint32_t xlo, uint32_t ylo) {
     static const uint64_t B[] = {0x5555555555555555ULL, 0x3333333333333333ULL,
@@ -18,14 +22,12 @@ uint64_t GeoHash::interleave64(uint32_t xlo, uint32_t ylo) {
     uint64_t x = xlo;
     uint64_t y = ylo;
 
-    // Spread x (Lat) -> even bits
     x = (x | (x << S[4])) & B[4];
     x = (x | (x << S[3])) & B[3];
     x = (x | (x << S[2])) & B[2];
     x = (x | (x << S[1])) & B[1];
     x = (x | (x << S[0])) & B[0];
 
-    // Spread y (Long) -> even bits (will be shifted to odd)
     y = (y | (y << S[4])) & B[4];
     y = (y | (y << S[3])) & B[3];
     y = (y | (y << S[2])) & B[2];
@@ -39,23 +41,11 @@ uint64_t GeoHash::interleave64(uint32_t xlo, uint32_t ylo) {
 uint64_t GeoHash::deinterleave64(uint64_t interleaved) {
     uint64_t x = interleaved;
 
-    // 1. Keep only even bits (0, 2, 4...)
     x &= 0x5555555555555555ULL; 
-
-    // 2. Compact 1-bit gaps
-    // (x | (x >> 1)) combines neighbors. Mask 0x3333... keeps the valid packed pairs.
     x = (x | (x >> 1)) & 0x3333333333333333ULL; 
-    
-    // 3. Compact 2-bit gaps
     x = (x | (x >> 2)) & 0x0F0F0F0F0F0F0F0FULL;
-
-    // 4. Compact 4-bit gaps
     x = (x | (x >> 4)) & 0x00FF00FF00FF00FFULL;
-
-    // 5. Compact 8-bit gaps
     x = (x | (x >> 8)) & 0x0000FFFF0000FFFFULL;
-
-    // 6. Compact 16-bit gaps
     x = (x | (x >> 16)) & 0x00000000FFFFFFFFULL;
 
     return x;
@@ -84,18 +74,31 @@ double GeoHash::encode(double latitude, double longitude) {
 std::pair<double, double> GeoHash::decode(double score) {
     uint64_t hash = static_cast<uint64_t>(score);
 
-    // Lat is at even bits (0, 2, 4...) -> deinterleave directly
     uint64_t lat_bits = deinterleave64(hash);
-    
-    // Long is at odd bits (1, 3, 5...) -> shift right 1 then deinterleave
     uint64_t long_bits = deinterleave64(hash >> 1);
 
     double lat_step = (GEO_LAT_MAX - GEO_LAT_MIN) / (1ULL << 26);
     double long_step = (GEO_LONG_MAX - GEO_LONG_MIN) / (1ULL << 26);
 
-    // Coordinate = Min + (Value * Step) + (Step / 2)
     double latitude = GEO_LAT_MIN + (lat_bits * lat_step) + (lat_step / 2);
     double longitude = GEO_LONG_MIN + (long_bits * long_step) + (long_step / 2);
 
     return {latitude, longitude};
+}
+
+double GeoHash::distance(double lat1, double lon1, double lat2, double lon2) {
+    double r_lat1 = lat1 * (PI / 180.0);
+    double r_lon1 = lon1 * (PI / 180.0);
+    double r_lat2 = lat2 * (PI / 180.0);
+    double r_lon2 = lon2 * (PI / 180.0);
+
+    double d_lat = r_lat2 - r_lat1;
+    double d_lon = r_lon2 - r_lon1;
+
+    double a = std::pow(std::sin(d_lat / 2), 2) +
+               std::cos(r_lat1) * std::cos(r_lat2) * std::pow(std::sin(d_lon / 2), 2);
+    
+    double c = 2 * std::atan2(std::sqrt(a), std::sqrt(1 - a));
+    
+    return EARTH_RADIUS_M * c;
 }

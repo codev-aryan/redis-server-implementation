@@ -41,7 +41,7 @@ std::string Dispatcher::execute_command(Database& db, std::shared_ptr<Client> cl
              command == "ZCARD" || command == "ZSCORE" || command == "ZREM") {
         return ZSetCommands::handle(db, args);
     }
-    else if (command == "GEOADD" || command == "GEOPOS" || command == "GEODIST") {
+    else if (command == "GEOADD" || command == "GEOPOS" || command == "GEODIST" || command == "GEOSEARCH") {
         return GeoCommands::handle(db, args);
     }
     

@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <optional>
+#include <cstdio> 
 
 std::string GeoCommands::handle(Database& db, const std::vector<std::string>& args) {
     std::string command = to_upper(args[0]);
@@ -91,16 +92,25 @@ std::string GeoCommands::handle(Database& db, const std::vector<std::string>& ar
             } else {
                 for (size_t i = 2; i < args.size(); ++i) {
                     std::string member = args[i];
-                    bool exists = false;
+                    std::optional<double> score;
 
                     if (it != db.kv_store.end()) {
-                        if (RedisZSet::get_score(it->second, member).has_value()) {
-                            exists = true;
-                        }
+                        score = RedisZSet::get_score(it->second, member);
                     }
 
-                    if (exists) {
-                        results.push_back("*2\r\n$1\r\n0\r\n$1\r\n0\r\n");
+                    if (score.has_value()) {
+                        auto coords = GeoHash::decode(score.value());
+                        double lat = coords.first;
+                        double lon = coords.second;
+                        
+                        char lat_buf[64], lon_buf[64];
+                        std::snprintf(lat_buf, sizeof(lat_buf), "%.17f", lat);
+                        std::snprintf(lon_buf, sizeof(lon_buf), "%.17f", lon);
+                        
+                        std::string res = "*2\r\n$" + std::to_string(std::string(lon_buf).length()) + "\r\n" + lon_buf + "\r\n$" + 
+                                          std::to_string(std::string(lat_buf).length()) + "\r\n" + lat_buf + "\r\n";
+                        results.push_back(res);
+
                     } else {
                         results.push_back("*-1\r\n");
                     }

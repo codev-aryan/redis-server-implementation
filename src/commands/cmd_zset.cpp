@@ -4,7 +4,8 @@
 #include <iostream>
 #include <iomanip>
 #include <sstream>
-#include <cstdio> 
+#include <cstdio>
+#include <optional>
 
 std::string format_score(double value) {
     char buffer[128];
@@ -30,6 +31,11 @@ std::string ZSetCommands::handle(Database& db, const std::vector<std::string>& a
             std::lock_guard<std::mutex> lock(db.kv_mutex);
             auto it = db.kv_store.find(key);
             
+            if (it != db.kv_store.end() && db.is_expired(it->second)) {
+                db.kv_store.erase(it);
+                it = db.kv_store.end();
+            }
+
             if (it == db.kv_store.end()) {
                 Entry entry;
                 entry.type = VAL_ZSET;
@@ -65,6 +71,12 @@ std::string ZSetCommands::handle(Database& db, const std::vector<std::string>& a
         {
             std::lock_guard<std::mutex> lock(db.kv_mutex);
             auto it = db.kv_store.find(key);
+            
+            if (it != db.kv_store.end() && db.is_expired(it->second)) {
+                db.kv_store.erase(it);
+                it = db.kv_store.end();
+            }
+
             if (it != db.kv_store.end()) {
                 if (it->second.type != VAL_ZSET) wrong_type = true;
                 else rank = RedisZSet::rank(it->second, member);
@@ -92,6 +104,12 @@ std::string ZSetCommands::handle(Database& db, const std::vector<std::string>& a
         {
             std::lock_guard<std::mutex> lock(db.kv_mutex);
             auto it = db.kv_store.find(key);
+            
+            if (it != db.kv_store.end() && db.is_expired(it->second)) {
+                db.kv_store.erase(it);
+                it = db.kv_store.end();
+            }
+
             if (it != db.kv_store.end()) {
                 if (it->second.type != VAL_ZSET) wrong_type = true;
                 else members = RedisZSet::range(it->second, start, stop);
@@ -116,6 +134,12 @@ std::string ZSetCommands::handle(Database& db, const std::vector<std::string>& a
         {
             std::lock_guard<std::mutex> lock(db.kv_mutex);
             auto it = db.kv_store.find(key);
+            
+            if (it != db.kv_store.end() && db.is_expired(it->second)) {
+                db.kv_store.erase(it);
+                it = db.kv_store.end();
+            }
+
             if (it != db.kv_store.end()) {
                  if (it->second.type != VAL_ZSET) wrong_type = true;
                  else count = RedisZSet::size(it->second);
@@ -135,6 +159,12 @@ std::string ZSetCommands::handle(Database& db, const std::vector<std::string>& a
         {
             std::lock_guard<std::mutex> lock(db.kv_mutex);
             auto it = db.kv_store.find(key);
+            
+            if (it != db.kv_store.end() && db.is_expired(it->second)) {
+                db.kv_store.erase(it);
+                it = db.kv_store.end();
+            }
+
             if (it != db.kv_store.end()) {
                 if (it->second.type != VAL_ZSET) wrong_type = true;
                 else score = RedisZSet::get_score(it->second, member);
@@ -159,6 +189,12 @@ std::string ZSetCommands::handle(Database& db, const std::vector<std::string>& a
         {
             std::lock_guard<std::mutex> lock(db.kv_mutex);
             auto it = db.kv_store.find(key);
+            
+            if (it != db.kv_store.end() && db.is_expired(it->second)) {
+                db.kv_store.erase(it);
+                it = db.kv_store.end();
+            }
+
             if (it != db.kv_store.end()) {
                 if (it->second.type != VAL_ZSET) {
                     wrong_type = true;

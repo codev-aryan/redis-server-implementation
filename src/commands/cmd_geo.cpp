@@ -27,24 +27,14 @@ std::string GeoCommands::handle(Database& db, const std::vector<std::string>& ar
         for (size_t i = 2; i < args.size(); i += 3) {
             std::string long_str = args[i];
             std::string lat_str = args[i+1];
-
             double longitude = 0.0;
             double latitude = 0.0;
-
             try {
                 longitude = std::stod(long_str);
                 latitude = std::stod(lat_str);
-            } catch (...) {
-                return "-ERR value is not a valid float\r\n";
-            }
-
-            if (longitude < -180.0 || longitude > 180.0) {
-                return "-ERR invalid longitude\r\n";
-            }
-
-            if (latitude < -85.05112878 || latitude > 85.05112878) {
-                return "-ERR invalid latitude\r\n";
-            }
+            } catch (...) { return "-ERR value is not a valid float\r\n"; }
+            if (longitude < -180.0 || longitude > 180.0) return "-ERR invalid longitude\r\n";
+            if (latitude < -85.05112878 || latitude > 85.05112878) return "-ERR invalid latitude\r\n";
         }
 
         std::string key = args[1];
@@ -55,6 +45,11 @@ std::string GeoCommands::handle(Database& db, const std::vector<std::string>& ar
             std::lock_guard<std::mutex> lock(db.kv_mutex);
             auto it = db.kv_store.find(key);
             
+            if (it != db.kv_store.end() && db.is_expired(it->second)) {
+                db.kv_store.erase(it);
+                it = db.kv_store.end();
+            }
+
             if (it == db.kv_store.end()) {
                 Entry entry;
                 entry.type = VAL_ZSET;
@@ -71,22 +66,16 @@ std::string GeoCommands::handle(Database& db, const std::vector<std::string>& ar
                     std::string member = args[i+2];
 
                     double score = GeoHash::encode(latitude, longitude);
-
                     added_count += RedisZSet::add(it->second, score, member);
                 }
             }
         }
 
-        if (wrong_type) {
-            return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
-        }
-        
+        if (wrong_type) return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
         return ":" + std::to_string(added_count) + "\r\n";
     }
     else if (command == "GEOPOS") {
-        if (args.size() < 2) {
-            return "-ERR wrong number of arguments for 'geopos' command\r\n";
-        }
+        if (args.size() < 2) return "-ERR wrong number of arguments for 'geopos' command\r\n";
 
         std::string key = args[1];
         std::vector<std::string> results;
@@ -96,6 +85,11 @@ std::string GeoCommands::handle(Database& db, const std::vector<std::string>& ar
             std::lock_guard<std::mutex> lock(db.kv_mutex);
             auto it = db.kv_store.find(key);
             
+            if (it != db.kv_store.end() && db.is_expired(it->second)) {
+                db.kv_store.erase(it);
+                it = db.kv_store.end();
+            }
+
             if (it != db.kv_store.end() && it->second.type != VAL_ZSET) {
                 wrong_type = true;
             } else {
@@ -109,17 +103,13 @@ std::string GeoCommands::handle(Database& db, const std::vector<std::string>& ar
 
                     if (score.has_value()) {
                         auto coords = GeoHash::decode(score.value());
-                        double lat = coords.first;
-                        double lon = coords.second;
-                        
                         char lat_buf[64], lon_buf[64];
-                        std::snprintf(lat_buf, sizeof(lat_buf), "%.17f", lat);
-                        std::snprintf(lon_buf, sizeof(lon_buf), "%.17f", lon);
+                        std::snprintf(lat_buf, sizeof(lat_buf), "%.17f", coords.first);
+                        std::snprintf(lon_buf, sizeof(lon_buf), "%.17f", coords.second);
                         
                         std::string res = "*2\r\n$" + std::to_string(std::string(lon_buf).length()) + "\r\n" + lon_buf + "\r\n$" + 
                                           std::to_string(std::string(lat_buf).length()) + "\r\n" + lat_buf + "\r\n";
                         results.push_back(res);
-
                     } else {
                         results.push_back("*-1\r\n");
                     }
@@ -127,25 +117,18 @@ std::string GeoCommands::handle(Database& db, const std::vector<std::string>& ar
             }
         }
 
-        if (wrong_type) {
-            return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
-        }
+        if (wrong_type) return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
 
         std::string response = "*" + std::to_string(results.size()) + "\r\n";
-        for (const auto& res : results) {
-            response += res;
-        }
+        for (const auto& res : results) response += res;
         return response;
     }
     else if (command == "GEODIST") {
-        if (args.size() < 4) {
-            return "-ERR wrong number of arguments for 'geodist' command\r\n";
-        }
+        if (args.size() < 4) return "-ERR wrong number of arguments for 'geodist' command\r\n";
 
         std::string key = args[1];
         std::string member1 = args[2];
         std::string member2 = args[3];
-        
         std::optional<double> score1, score2;
         bool wrong_type = false;
 
@@ -153,27 +136,25 @@ std::string GeoCommands::handle(Database& db, const std::vector<std::string>& ar
             std::lock_guard<std::mutex> lock(db.kv_mutex);
             auto it = db.kv_store.find(key);
             
+            if (it != db.kv_store.end() && db.is_expired(it->second)) {
+                db.kv_store.erase(it);
+                it = db.kv_store.end();
+            }
+
             if (it != db.kv_store.end()) {
-                if (it->second.type != VAL_ZSET) {
-                    wrong_type = true;
-                } else {
+                if (it->second.type != VAL_ZSET) wrong_type = true;
+                else {
                     score1 = RedisZSet::get_score(it->second, member1);
                     score2 = RedisZSet::get_score(it->second, member2);
                 }
             }
         }
 
-        if (wrong_type) {
-             return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
-        }
-
-        if (!score1.has_value() || !score2.has_value()) {
-            return "$-1\r\n"; 
-        }
+        if (wrong_type) return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+        if (!score1.has_value() || !score2.has_value()) return "$-1\r\n";
 
         auto coord1 = GeoHash::decode(score1.value());
         auto coord2 = GeoHash::decode(score2.value());
-
         double dist = GeoHash::distance(coord1.first, coord1.second, coord2.first, coord2.second);
         
         std::string unit = (args.size() > 4) ? args[4] : "m";
@@ -184,29 +165,20 @@ std::string GeoCommands::handle(Database& db, const std::vector<std::string>& ar
         char dist_buf[64];
         std::snprintf(dist_buf, sizeof(dist_buf), "%.4f", dist);
         std::string dist_str(dist_buf);
-
         return "$" + std::to_string(dist_str.length()) + "\r\n" + dist_str + "\r\n";
     }
     else if (command == "GEOSEARCH") {
-        if (args.size() < 8) {
-             return "-ERR syntax error\r\n";
-        }
-        
-        if (to_upper(args[2]) != "FROMLONLAT" || to_upper(args[5]) != "BYRADIUS") {
-             return "-ERR syntax error\r\n";
-        }
+        if (args.size() < 8) return "-ERR syntax error\r\n";
+        if (to_upper(args[2]) != "FROMLONLAT" || to_upper(args[5]) != "BYRADIUS") return "-ERR syntax error\r\n";
 
         std::string key = args[1];
         double from_lon = 0, from_lat = 0, radius = 0;
         std::string unit = args[7];
-
         try {
             from_lon = std::stod(args[3]);
             from_lat = std::stod(args[4]);
             radius = std::stod(args[6]);
-        } catch (...) {
-            return "-ERR value is not a valid float\r\n";
-        }
+        } catch (...) { return "-ERR value is not a valid float\r\n"; }
 
         double radius_meters = convert_to_meters(radius, unit);
         std::vector<std::string> matches;
@@ -216,33 +188,28 @@ std::string GeoCommands::handle(Database& db, const std::vector<std::string>& ar
             std::lock_guard<std::mutex> lock(db.kv_mutex);
             auto it = db.kv_store.find(key);
             
+            if (it != db.kv_store.end() && db.is_expired(it->second)) {
+                db.kv_store.erase(it);
+                it = db.kv_store.end();
+            }
+
             if (it != db.kv_store.end()) {
-                if (it->second.type != VAL_ZSET) {
-                    wrong_type = true;
-                } else {
+                if (it->second.type != VAL_ZSET) wrong_type = true;
+                else {
                     for (const auto& pair : it->second.zset_val.dict) {
                         const std::string& member = pair.first;
                         double score = pair.second;
-                        
                         auto coords = GeoHash::decode(score);
                         double dist = GeoHash::distance(from_lat, from_lon, coords.first, coords.second);
-                        
-                        if (dist <= radius_meters) {
-                            matches.push_back(member);
-                        }
+                        if (dist <= radius_meters) matches.push_back(member);
                     }
                 }
             }
         }
 
-        if (wrong_type) {
-            return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
-        }
-
+        if (wrong_type) return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
         std::string response = "*" + std::to_string(matches.size()) + "\r\n";
-        for (const auto& m : matches) {
-            response += "$" + std::to_string(m.length()) + "\r\n" + m + "\r\n";
-        }
+        for (const auto& m : matches) response += "$" + std::to_string(m.length()) + "\r\n" + m + "\r\n";
         return response;
     }
     

@@ -7,14 +7,13 @@ void Database::notify_blocked_clients(const std::string& key) {
     auto& q = blocking_keys[key];
     while (!q.empty()) {
         auto weak_client = q.front();
-        auto client = weak_client.lock();
+        q.pop();
         
+        auto client = weak_client.lock();
         if (client) {
             client->cv.notify_one();
-            break; 
-        } else {
-            q.pop();
-        }
+            return;
+        } 
     }
 }
 

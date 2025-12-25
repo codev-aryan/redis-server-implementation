@@ -2,10 +2,19 @@
 #include "../utils/utils.hpp"
 #include "../db/structs/redis_list.hpp"
 #include "../server/client.hpp"
+#include <iostream>
+#include <memory>
 
 std::string ListCommands::handle(Database& db, std::shared_ptr<Client> client, const std::vector<std::string>& args) {
     std::string command = to_upper(args[0]);
     std::string response;
+
+    auto check_expiry = [&](std::unordered_map<std::string, Entry>::iterator& it) {
+        if (it != db.kv_store.end() && db.is_expired(it->second)) {
+            db.kv_store.erase(it);
+            it = db.kv_store.end();
+        }
+    };
 
     if (command == "RPUSH" && args.size() >= 3) {
         std::string key = args[1];
@@ -15,11 +24,7 @@ std::string ListCommands::handle(Database& db, std::shared_ptr<Client> client, c
         {
             std::lock_guard<std::mutex> lock(db.kv_mutex);
             auto it = db.kv_store.find(key);
-            
-            if (it != db.kv_store.end() && db.is_expired(it->second)) {
-                db.kv_store.erase(it);
-                it = db.kv_store.end();
-            }
+            check_expiry(it);
             
             if (it == db.kv_store.end()) {
                 Entry entry;
@@ -34,6 +39,7 @@ std::string ListCommands::handle(Database& db, std::shared_ptr<Client> client, c
                     list_size = RedisList::size(it->second);
                 }
             }
+            if (!wrong_type) db.notify_blocked_clients(key);
         }
 
         if (wrong_type) response = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
@@ -47,11 +53,7 @@ std::string ListCommands::handle(Database& db, std::shared_ptr<Client> client, c
         {
             std::lock_guard<std::mutex> lock(db.kv_mutex);
             auto it = db.kv_store.find(key);
-
-            if (it != db.kv_store.end() && db.is_expired(it->second)) {
-                db.kv_store.erase(it);
-                it = db.kv_store.end();
-            }
+            check_expiry(it);
 
             if (it == db.kv_store.end()) {
                 Entry entry;
@@ -66,6 +68,7 @@ std::string ListCommands::handle(Database& db, std::shared_ptr<Client> client, c
                     list_size = RedisList::size(it->second);
                 }
             }
+            if (!wrong_type) db.notify_blocked_clients(key);
         }
 
         if (wrong_type) response = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
@@ -79,11 +82,7 @@ std::string ListCommands::handle(Database& db, std::shared_ptr<Client> client, c
         {
             std::lock_guard<std::mutex> lock(db.kv_mutex);
             auto it = db.kv_store.find(key);
-            
-            if (it != db.kv_store.end() && db.is_expired(it->second)) {
-                db.kv_store.erase(it);
-                it = db.kv_store.end();
-            }
+            check_expiry(it);
 
             if (it != db.kv_store.end()) {
                 if (it->second.type != VAL_LIST) wrong_type = true;
@@ -105,11 +104,7 @@ std::string ListCommands::handle(Database& db, std::shared_ptr<Client> client, c
         {
             std::lock_guard<std::mutex> lock(db.kv_mutex);
             auto it = db.kv_store.find(key);
-
-            if (it != db.kv_store.end() && db.is_expired(it->second)) {
-                db.kv_store.erase(it);
-                it = db.kv_store.end();
-            }
+            check_expiry(it);
 
             if (it != db.kv_store.end()) {
                 if (it->second.type != VAL_LIST) wrong_type = true;
@@ -132,6 +127,76 @@ std::string ListCommands::handle(Database& db, std::shared_ptr<Client> client, c
         } else {
             response = "*" + std::to_string(items.size()) + "\r\n";
             for (const auto& item : items) response += "$" + std::to_string(item.length()) + "\r\n" + item + "\r\n";
+        }
+    }
+    else if (command == "LPOP" && args.size() >= 2) {
+        std::string key = args[1];
+        std::string val;
+        bool wrong_type = false;
+        bool found = false;
+
+        {
+            std::lock_guard<std::mutex> lock(db.kv_mutex);
+            auto it = db.kv_store.find(key);
+            check_expiry(it);
+
+            if (it != db.kv_store.end()) {
+                if (it->second.type != VAL_LIST) wrong_type = true;
+                else {
+                    val = RedisList::pop_front(it->second);
+                    if (it->second.list_val.empty()) db.kv_store.erase(it);
+                    found = true;
+                }
+            }
+        }
+
+        if (wrong_type) response = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+        else if (found) response = "$" + std::to_string(val.length()) + "\r\n" + val + "\r\n";
+        else response = "$-1\r\n";
+    }
+    else if (command == "BLPOP" && args.size() >= 3) {
+        std::string key = args[1];
+        double timeout_sec = 0;
+        try { timeout_sec = std::stod(args.back()); } catch(...) {}
+
+        auto blocker = std::make_shared<BlockedClient>();
+        blocker->key_waiting_on = key;
+
+        std::unique_lock<std::mutex> lock(db.kv_mutex);
+        
+        auto should_return = [&]() -> bool {
+            auto it = db.kv_store.find(key);
+            if (it != db.kv_store.end() && db.is_expired(it->second)) {
+                db.kv_store.erase(it);
+                it = db.kv_store.end();
+            }
+            return (it != db.kv_store.end() && it->second.type == VAL_LIST && !it->second.list_val.empty());
+        };
+
+        if (should_return()) {
+            auto it = db.kv_store.find(key);
+            std::string val = RedisList::pop_front(it->second);
+            if (it->second.list_val.empty()) db.kv_store.erase(it);
+            response = "*2\r\n$" + std::to_string(key.length()) + "\r\n" + key + "\r\n$" + std::to_string(val.length()) + "\r\n" + val + "\r\n";
+        } else {
+            db.blocking_keys[key].push(blocker);
+
+            bool success = false;
+            if (timeout_sec > 0.001) {
+                success = blocker->cv.wait_for(lock, std::chrono::duration<double>(timeout_sec), should_return);
+            } else {
+                blocker->cv.wait(lock, should_return);
+                success = true;
+            }
+
+            if (success && should_return()) {
+                auto it = db.kv_store.find(key);
+                std::string val = RedisList::pop_front(it->second);
+                if (it->second.list_val.empty()) db.kv_store.erase(it);
+                response = "*2\r\n$" + std::to_string(key.length()) + "\r\n" + key + "\r\n$" + std::to_string(val.length()) + "\r\n" + val + "\r\n";
+            } else {
+                response = "*-1\r\n";
+            }
         }
     }
     else {

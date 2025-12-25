@@ -131,9 +131,21 @@ std::string ListCommands::handle(Database& db, std::shared_ptr<Client> client, c
     }
     else if (command == "LPOP" && args.size() >= 2) {
         std::string key = args[1];
-        std::string val;
+        int count = 1;
+        bool has_count = false;
+
+        if (args.size() >= 3) {
+            try {
+                count = std::stoi(args[2]);
+                has_count = true;
+            } catch (...) {
+                 return "-ERR value is not an integer or out of range\r\n";
+            }
+        }
+
+        std::vector<std::string> popped_values;
         bool wrong_type = false;
-        bool found = false;
+        bool key_exists = false;
 
         {
             std::lock_guard<std::mutex> lock(db.kv_mutex);
@@ -143,16 +155,32 @@ std::string ListCommands::handle(Database& db, std::shared_ptr<Client> client, c
             if (it != db.kv_store.end()) {
                 if (it->second.type != VAL_LIST) wrong_type = true;
                 else {
-                    val = RedisList::pop_front(it->second);
+                    key_exists = true;
+                    int actual_pops = 0;
+                    while (actual_pops < count && !it->second.list_val.empty()) {
+                        popped_values.push_back(RedisList::pop_front(it->second));
+                        actual_pops++;
+                    }
                     if (it->second.list_val.empty()) db.kv_store.erase(it);
-                    found = true;
                 }
             }
         }
 
-        if (wrong_type) response = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
-        else if (found) response = "$" + std::to_string(val.length()) + "\r\n" + val + "\r\n";
-        else response = "$-1\r\n";
+        if (wrong_type) {
+            response = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+        } else if (!key_exists) {
+            response = "$-1\r\n";
+        } else {
+            if (has_count) {
+                response = "*" + std::to_string(popped_values.size()) + "\r\n";
+                for (const auto& v : popped_values) {
+                    response += "$" + std::to_string(v.length()) + "\r\n" + v + "\r\n";
+                }
+            } else {
+                if (popped_values.empty()) response = "$-1\r\n";
+                else response = "$" + std::to_string(popped_values[0].length()) + "\r\n" + popped_values[0] + "\r\n";
+            }
+        }
     }
     else if (command == "BLPOP" && args.size() >= 3) {
         std::string key = args[1];

@@ -1,4 +1,6 @@
+#pragma once
 #include "../object.hpp"
+#include "../../utils/utils.hpp"
 #include <string>
 #include <vector>
 #include <utility>
@@ -29,16 +31,39 @@ private:
 public:
     static std::string xadd(Entry& entry, const std::string& id_str, const std::vector<std::pair<std::string, std::string>>& pairs) {
         StreamID new_id;
-        bool is_auto_seq = false;
+        bool is_generated = false;
 
-        size_t dash_pos = id_str.find('-');
-        if (dash_pos != std::string::npos && dash_pos + 1 < id_str.size() && id_str[dash_pos + 1] == '*') {
+        // Case 1: Full Auto-generation "*"
+        if (id_str == "*") {
+            uint64_t now_ms = current_time_ms();
+            uint64_t seq = 0;
+
+            if (!entry.stream_val.empty()) {
+                const auto& last = entry.stream_val.back();
+                if (now_ms > last.ms) {
+                    seq = 0;
+                } else {
+                    now_ms = last.ms;
+                    seq = last.seq + 1;
+                }
+            }
+
+            if (now_ms == 0 && seq == 0) {
+                seq = 1;
+            }
+
+            new_id = {now_ms, seq};
+            is_generated = true;
+        }
+        // Case 2: Partial Auto-generation "<ms>-*"
+        else if (id_str.find("-*") != std::string::npos) {
+            size_t dash_pos = id_str.find('-');
             try {
                 new_id.ms = std::stoull(id_str.substr(0, dash_pos));
-                is_auto_seq = true;
             } catch (...) {
                 throw std::invalid_argument("Invalid stream ID format");
             }
+
             uint64_t seq = 0;
             if (!entry.stream_val.empty()) {
                 const auto& last = entry.stream_val.back();
@@ -51,10 +76,14 @@ public:
                 seq = 1;
             }
             new_id.seq = seq;
+            is_generated = true;
         } 
+        // Case 3: Explicit ID
         else {
             new_id = parse_explicit_id(id_str);
         }
+
+        // --- Validation Logic ---
 
         if (new_id.ms == 0 && new_id.seq == 0) {
             throw std::runtime_error("ERR The ID specified in XADD must be greater than 0-0");
@@ -76,9 +105,9 @@ public:
                 throw std::runtime_error("ERR The ID specified in XADD is equal or smaller than the target stream top item");
             }
         }
-        
+
         std::string final_id_str;
-        if (is_auto_seq) {
+        if (is_generated) {
             final_id_str = std::to_string(new_id.ms) + "-" + std::to_string(new_id.seq);
         } else {
             final_id_str = id_str;

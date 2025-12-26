@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <set>
 #include <utility>
+#include <cstdint>
 
 enum ValueType {
     VAL_STRING,
@@ -29,7 +30,9 @@ struct ZSet {
 };
 
 struct StreamEntry {
-    std::string id;
+    std::string id_str;
+    uint64_t ms;
+    uint64_t seq;
     std::vector<std::pair<std::string, std::string>> pairs;
 };
 

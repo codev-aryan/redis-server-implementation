@@ -1,6 +1,7 @@
 #include "cmd_stream.hpp"
 #include "../utils/utils.hpp"
 #include "../db/structs/redis_stream.hpp"
+#include <iostream>
 
 std::string StreamCommands::handle(Database& db, const std::vector<std::string>& args) {
     std::string command = to_upper(args[0]);
@@ -19,6 +20,7 @@ std::string StreamCommands::handle(Database& db, const std::vector<std::string>&
         }
 
         bool wrong_type = false;
+        std::string error_response;
         
         {
             std::lock_guard<std::mutex> lock(db.kv_mutex);
@@ -29,21 +31,26 @@ std::string StreamCommands::handle(Database& db, const std::vector<std::string>&
                 it = db.kv_store.end();
             }
 
-            if (it == db.kv_store.end()) {
-                Entry entry;
-                entry.type = VAL_STREAM;
-                RedisStream::xadd(entry, id, pairs);
-                db.kv_store[key] = entry;
-            } else {
-                if (it->second.type != VAL_STREAM) {
-                    wrong_type = true;
+            try {
+                if (it == db.kv_store.end()) {
+                    Entry entry;
+                    entry.type = VAL_STREAM;
+                    RedisStream::xadd(entry, id, pairs);
+                    db.kv_store[key] = entry;
                 } else {
-                    RedisStream::xadd(it->second, id, pairs);
+                    if (it->second.type != VAL_STREAM) {
+                        wrong_type = true;
+                    } else {
+                        RedisStream::xadd(it->second, id, pairs);
+                    }
                 }
+            } catch (const std::exception& e) {
+                error_response = "-" + std::string(e.what()) + "\r\n";
             }
         }
 
         if (wrong_type) return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+        if (!error_response.empty()) return error_response;
         
         return "$" + std::to_string(id.length()) + "\r\n" + id + "\r\n";
     }

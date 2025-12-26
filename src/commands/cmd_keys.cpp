@@ -21,10 +21,12 @@ std::string KeyCommands::handle(Database& db, const std::vector<std::string>& ar
                     case VAL_STRING: type_str = "string"; break;
                     case VAL_LIST:   type_str = "list"; break;
                     case VAL_ZSET:   type_str = "zset"; break;
+                    case VAL_STREAM: type_str = "stream"; break;
                     default:         type_str = "unknown"; break; 
                 }
             }
         }
+        
         return "+" + type_str + "\r\n";
     }
     

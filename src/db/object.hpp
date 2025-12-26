@@ -9,7 +9,8 @@
 enum ValueType {
     VAL_STRING,
     VAL_LIST,
-    VAL_ZSET
+    VAL_ZSET,
+    VAL_STREAM
 };
 
 struct ScoreMemberCompare {
@@ -27,10 +28,16 @@ struct ZSet {
     std::set<std::pair<double, std::string>, ScoreMemberCompare> tree;
 };
 
+struct StreamEntry {
+    std::string id;
+    std::vector<std::pair<std::string, std::string>> pairs;
+};
+
 struct Entry {
     ValueType type = VAL_STRING;
     std::string string_val;
     std::deque<std::string> list_val; 
     ZSet zset_val;
+    std::vector<StreamEntry> stream_val;
     long long expiry_at = 0;
 };

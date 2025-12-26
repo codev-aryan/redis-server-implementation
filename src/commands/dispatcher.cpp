@@ -5,7 +5,8 @@
 #include "cmd_zset.hpp"
 #include "cmd_geo.hpp"
 #include "cmd_tx.hpp"
-#include "cmd_keys.hpp" // Added include
+#include "cmd_keys.hpp"
+#include "cmd_stream.hpp"
 #include "../utils/utils.hpp"
 #include "../server/client.hpp"
 
@@ -47,6 +48,9 @@ std::string Dispatcher::execute_command(Database& db, std::shared_ptr<Client> cl
     }
     else if (command == "TYPE") {
         return KeyCommands::handle(db, args);
+    }
+    else if (command == "XADD") {
+        return StreamCommands::handle(db, args);
     }
     
     return "-ERR unknown command\r\n";

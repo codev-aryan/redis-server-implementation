@@ -6,7 +6,7 @@
 #include <utility>
 #include <stdexcept>
 #include <iostream>
-#include <limits>=
+#include <limits>
 
 class RedisStream {
 private:
@@ -68,7 +68,6 @@ public:
         StreamID new_id;
         bool is_generated = false;
 
-        // Case 1: Full Auto-generation "*"
         if (id_str == "*") {
             uint64_t now_ms = current_time_ms();
             uint64_t seq = 0;
@@ -83,12 +82,10 @@ public:
                     seq = last_id.seq + 1;
                 }
             }
-
             if (now_ms == 0 && seq == 0) seq = 1;
             new_id = {now_ms, seq};
             is_generated = true;
         }
-        // Case 2: Partial Auto-generation "<ms>-*"
         else if (id_str.find("-*") != std::string::npos) {
             size_t dash_pos = id_str.find('-');
             try {
@@ -100,17 +97,14 @@ public:
                 const auto& last = entry.stream_val.back();
                 if (new_id.ms == last.ms) seq = last.seq + 1;
             }
-
             if (new_id.ms == 0 && seq == 0) seq = 1;
             new_id.seq = seq;
             is_generated = true;
         } 
-        // Case 3: Explicit
         else {
             new_id = parse_explicit_id(id_str);
         }
 
-        // Validation
         if (new_id.ms == 0 && new_id.seq == 0) {
             throw std::runtime_error("ERR The ID specified in XADD must be greater than 0-0");
         }
@@ -118,7 +112,6 @@ public:
         if (!entry.stream_val.empty()) {
             const auto& last = entry.stream_val.back();
             StreamID last_id = {last.ms, last.seq};
-            
             if (new_id <= last_id) {
                 throw std::runtime_error("ERR The ID specified in XADD is equal or smaller than the target stream top item");
             }
@@ -138,7 +131,6 @@ public:
         new_entry.pairs = pairs;
         
         entry.stream_val.push_back(new_entry);
-
         return final_id_str;
     }
 
@@ -152,6 +144,21 @@ public:
         for (const auto& item : entry.stream_val) {
             StreamID item_id = {item.ms, item.seq};
             if (item_id >= start_id && item_id <= end_id) {
+                result.push_back(item);
+            }
+        }
+        return result;
+    }
+
+    static std::vector<StreamEntry> read(const Entry& entry, const std::string& start_str) {
+        std::vector<StreamEntry> result;
+        if (entry.stream_val.empty()) return result;
+
+        StreamID start_id = parse_explicit_id(start_str);
+
+        for (const auto& item : entry.stream_val) {
+            StreamID item_id = {item.ms, item.seq};
+            if (item_id > start_id) {
                 result.push_back(item);
             }
         }

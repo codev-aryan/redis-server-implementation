@@ -49,7 +49,7 @@ std::string Dispatcher::execute_command(Database& db, std::shared_ptr<Client> cl
     else if (command == "TYPE") {
         return KeyCommands::handle(db, args);
     }
-    else if (command == "XADD" || command == "XRANGE") {
+    else if (command == "XADD" || command == "XRANGE" || command == "XREAD") {
         return StreamCommands::handle(db, args);
     }
     

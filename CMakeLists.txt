@@ -21,6 +21,7 @@ set(SOURCE_FILES
     src/commands/cmd_zset.cpp
     src/commands/cmd_geo.cpp
     src/commands/cmd_tx.cpp
+    src/commands/cmd_keys.cpp 
 )
 
 find_package(Threads REQUIRED)

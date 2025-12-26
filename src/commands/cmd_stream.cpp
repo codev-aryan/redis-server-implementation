@@ -12,7 +12,7 @@ std::string StreamCommands::handle(Database& db, const std::vector<std::string>&
         }
 
         std::string key = args[1];
-        std::string id = args[2];
+        std::string id_input = args[2];
         std::vector<std::pair<std::string, std::string>> pairs;
 
         for (size_t i = 3; i < args.size(); i += 2) {
@@ -21,6 +21,7 @@ std::string StreamCommands::handle(Database& db, const std::vector<std::string>&
 
         bool wrong_type = false;
         std::string error_response;
+        std::string added_id;
         
         {
             std::lock_guard<std::mutex> lock(db.kv_mutex);
@@ -35,13 +36,13 @@ std::string StreamCommands::handle(Database& db, const std::vector<std::string>&
                 if (it == db.kv_store.end()) {
                     Entry entry;
                     entry.type = VAL_STREAM;
-                    RedisStream::xadd(entry, id, pairs);
+                    added_id = RedisStream::xadd(entry, id_input, pairs);
                     db.kv_store[key] = entry;
                 } else {
                     if (it->second.type != VAL_STREAM) {
                         wrong_type = true;
                     } else {
-                        RedisStream::xadd(it->second, id, pairs);
+                        added_id = RedisStream::xadd(it->second, id_input, pairs);
                     }
                 }
             } catch (const std::exception& e) {
@@ -52,7 +53,7 @@ std::string StreamCommands::handle(Database& db, const std::vector<std::string>&
         if (wrong_type) return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
         if (!error_response.empty()) return error_response;
         
-        return "$" + std::to_string(id.length()) + "\r\n" + id + "\r\n";
+        return "$" + std::to_string(added_id.length()) + "\r\n" + added_id + "\r\n";
     }
 
     return "-ERR unknown command\r\n";

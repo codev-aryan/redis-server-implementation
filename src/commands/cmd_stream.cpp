@@ -55,6 +55,51 @@ std::string StreamCommands::handle(Database& db, const std::vector<std::string>&
         
         return "$" + std::to_string(added_id.length()) + "\r\n" + added_id + "\r\n";
     }
+    else if (command == "XRANGE") {
+        if (args.size() < 4) return "-ERR wrong number of arguments for 'xrange' command\r\n";
+
+        std::string key = args[1];
+        std::string start = args[2];
+        std::string end = args[3];
+        std::vector<StreamEntry> entries;
+        bool wrong_type = false;
+
+        {
+            std::lock_guard<std::mutex> lock(db.kv_mutex);
+            auto it = db.kv_store.find(key);
+            
+            if (it != db.kv_store.end() && db.is_expired(it->second)) {
+                db.kv_store.erase(it);
+                it = db.kv_store.end();
+            }
+
+            if (it != db.kv_store.end()) {
+                if (it->second.type != VAL_STREAM) {
+                    wrong_type = true;
+                } else {
+                    try {
+                        entries = RedisStream::range(it->second, start, end);
+                    } catch (...) {
+                         return "-ERR Invalid stream ID specified as stream command argument\r\n"; 
+                    }
+                }
+            }
+        }
+
+        if (wrong_type) return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+
+        std::string response = "*" + std::to_string(entries.size()) + "\r\n";
+        for (const auto& entry : entries) {
+            response += "*2\r\n";
+            response += "$" + std::to_string(entry.id_str.length()) + "\r\n" + entry.id_str + "\r\n";
+            response += "*" + std::to_string(entry.pairs.size() * 2) + "\r\n";
+            for (const auto& pair : entry.pairs) {
+                response += "$" + std::to_string(pair.first.length()) + "\r\n" + pair.first + "\r\n";
+                response += "$" + std::to_string(pair.second.length()) + "\r\n" + pair.second + "\r\n";
+            }
+        }
+        return response;
+    }
 
     return "-ERR unknown command\r\n";
 }

@@ -1,7 +1,10 @@
 #include "cmd_stream.hpp"
 #include "../utils/utils.hpp"
 #include "../db/structs/redis_stream.hpp"
+#include "../server/client.hpp"
 #include <iostream>
+#include <algorithm>
+#include <chrono>
 
 std::string StreamCommands::handle(Database& db, const std::vector<std::string>& args) {
     std::string command = to_upper(args[0]);
@@ -45,6 +48,11 @@ std::string StreamCommands::handle(Database& db, const std::vector<std::string>&
                         added_id = RedisStream::xadd(it->second, id_input, pairs);
                     }
                 }
+                
+                if (!wrong_type) {
+                    db.notify_blocked_clients(key);
+                }
+
             } catch (const std::exception& e) {
                 error_response = "-" + std::string(e.what()) + "\r\n";
             }
@@ -101,27 +109,44 @@ std::string StreamCommands::handle(Database& db, const std::vector<std::string>&
         return response;
     }
     else if (command == "XREAD") {
-        if (args.size() < 4 || to_upper(args[1]) != "STREAMS") {
-             return "-ERR syntax error\r\n";
+
+        size_t streams_idx = 0;
+        long long block_ms = -1;
+
+        for (size_t i = 1; i < args.size(); ++i) {
+            std::string arg = to_upper(args[i]);
+            if (arg == "STREAMS") {
+                streams_idx = i;
+                break;
+            } else if (arg == "BLOCK") {
+                if (i + 1 < args.size()) {
+                    try {
+                        block_ms = std::stoll(args[i+1]);
+                    } catch (...) { return "-ERR value is not an integer or out of range\r\n"; }
+                    i++;
+                } else {
+                    return "-ERR syntax error\r\n";
+                }
+            }
         }
 
-        size_t remaining = args.size() - 2;
-        if (remaining % 2 != 0) return "-ERR syntax error\r\n";
+        if (streams_idx == 0) return "-ERR syntax error\r\n";
+
+        size_t remaining = args.size() - (streams_idx + 1);
+        if (remaining == 0 || remaining % 2 != 0) return "-ERR syntax error\r\n";
 
         size_t key_count = remaining / 2;
         std::vector<std::string> keys;
         std::vector<std::string> ids;
 
-        for (size_t i = 0; i < key_count; ++i) keys.push_back(args[2 + i]);
-        for (size_t i = 0; i < key_count; ++i) ids.push_back(args[2 + key_count + i]);
+        for (size_t i = 0; i < key_count; ++i) keys.push_back(args[streams_idx + 1 + i]);
+        for (size_t i = 0; i < key_count; ++i) ids.push_back(args[streams_idx + 1 + key_count + i]);
 
         std::string response;
-        std::vector<std::string> stream_responses;
-
         bool wrong_type = false;
-
-        {
-            std::lock_guard<std::mutex> lock(db.kv_mutex);
+        
+        auto check_streams = [&]() -> std::vector<std::string> {
+            std::vector<std::string> responses;
             for (size_t i = 0; i < key_count; ++i) {
                 std::string key = keys[i];
                 std::string id = ids[i];
@@ -134,8 +159,8 @@ std::string StreamCommands::handle(Database& db, const std::vector<std::string>&
 
                 if (it != db.kv_store.end()) {
                     if (it->second.type != VAL_STREAM) {
-                        wrong_type = true; 
-                        break; 
+                        wrong_type = true;
+                        return {};
                     }
                     
                     try {
@@ -154,18 +179,43 @@ std::string StreamCommands::handle(Database& db, const std::vector<std::string>&
                                     stream_res += "$" + std::to_string(pair.second.length()) + "\r\n" + pair.second + "\r\n";
                                 }
                             }
-                            stream_responses.push_back(stream_res);
+                            responses.push_back(stream_res);
                         }
                     } catch (...) {
-                         return "-ERR Invalid stream ID specified as stream command argument\r\n";
                     }
                 }
             }
-        }
+            return responses;
+        };
 
+        std::unique_lock<std::mutex> lock(db.kv_mutex);
+
+        std::vector<std::string> stream_responses = check_streams();
+        
         if (wrong_type) return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
 
-        if (stream_responses.empty()) return "$-1\r\n";
+        if (stream_responses.empty() && block_ms >= 0) {
+            auto blocker = std::make_shared<BlockedClient>();
+            for (const auto& key : keys) {
+                db.blocking_keys[key].push(blocker);
+            }
+
+            auto predicate = [&]() {
+                stream_responses = check_streams();
+                return !stream_responses.empty();
+            };
+
+            if (block_ms == 0) {
+                blocker->cv.wait(lock, predicate);
+            } else {
+                blocker->cv.wait_for(lock, std::chrono::milliseconds(block_ms), predicate);
+            }
+        }
+
+        if (stream_responses.empty()) {
+            if (block_ms >= 0) return "*-1\r\n";
+            else return "$-1\r\n";
+        }
 
         response = "*" + std::to_string(stream_responses.size()) + "\r\n";
         for (const auto& sr : stream_responses) response += sr;

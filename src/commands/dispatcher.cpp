@@ -7,6 +7,7 @@
 #include "cmd_tx.hpp"
 #include "cmd_keys.hpp"
 #include "cmd_stream.hpp"
+#include "cmd_pubsub.hpp"
 #include "../utils/utils.hpp"
 #include "../server/client.hpp"
 
@@ -51,6 +52,9 @@ std::string Dispatcher::execute_command(Database& db, std::shared_ptr<Client> cl
     }
     else if (command == "XADD" || command == "XRANGE" || command == "XREAD") {
         return StreamCommands::handle(db, args);
+    }
+    else if (command == "SUBSCRIBE") {
+        return PubSubCommands::handle_subscribe(db, client, args);
     }
     
     return "-ERR unknown command\r\n";

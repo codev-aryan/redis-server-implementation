@@ -109,7 +109,6 @@ std::string StreamCommands::handle(Database& db, const std::vector<std::string>&
         return response;
     }
     else if (command == "XREAD") {
-
         size_t streams_idx = 0;
         long long block_ms = -1;
 
@@ -149,7 +148,7 @@ std::string StreamCommands::handle(Database& db, const std::vector<std::string>&
             std::vector<std::string> responses;
             for (size_t i = 0; i < key_count; ++i) {
                 std::string key = keys[i];
-                std::string id = ids[i];
+                std::string id = ids[i]; // This ID is already resolved (e.g., $ replaced by actual ID)
                 auto it = db.kv_store.find(key);
 
                 if (it != db.kv_store.end() && db.is_expired(it->second)) {
@@ -181,14 +180,25 @@ std::string StreamCommands::handle(Database& db, const std::vector<std::string>&
                             }
                             responses.push_back(stream_res);
                         }
-                    } catch (...) {
-                    }
+                    } catch (...) { }
                 }
             }
             return responses;
         };
 
         std::unique_lock<std::mutex> lock(db.kv_mutex);
+
+        for (size_t i = 0; i < key_count; ++i) {
+            if (ids[i] == "$") {
+                auto it = db.kv_store.find(keys[i]);
+                if (it != db.kv_store.end() && !db.is_expired(it->second) && 
+                    it->second.type == VAL_STREAM && !it->second.stream_val.empty()) {
+                    ids[i] = it->second.stream_val.back().id_str;
+                } else {
+                    ids[i] = "0-0";
+                }
+            }
+        }
 
         std::vector<std::string> stream_responses = check_streams();
         
@@ -213,8 +223,8 @@ std::string StreamCommands::handle(Database& db, const std::vector<std::string>&
         }
 
         if (stream_responses.empty()) {
-            if (block_ms >= 0) return "*-1\r\n";
-            else return "$-1\r\n";
+            if (block_ms >= 0) return "*-1\r\n"; 
+            else return "$-1\r\n"; 
         }
 
         response = "*" + std::to_string(stream_responses.size()) + "\r\n";

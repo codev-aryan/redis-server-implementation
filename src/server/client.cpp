@@ -11,6 +11,17 @@ Client::Client(int fd, Database& db) : fd(fd), db(db) {
 
 Client::~Client() {
     if (fd >= 0) close(fd);
+
+    std::lock_guard<std::mutex> lock(db.pubsub_mutex);
+    for (const auto& channel : subscriptions) {
+        auto it = db.pubsub_channels.find(channel);
+        if (it != db.pubsub_channels.end()) {
+            it->second.erase(this);
+            if (it->second.empty()) {
+                db.pubsub_channels.erase(it);
+            }
+        }
+    }
 }
 
 void Client::handle_requests() {

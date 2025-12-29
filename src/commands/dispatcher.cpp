@@ -40,7 +40,7 @@ std::string Dispatcher::dispatch(Database& db, std::shared_ptr<Client> client, c
 std::string Dispatcher::execute_command(Database& db, std::shared_ptr<Client> client, const std::vector<std::string>& args) {
     std::string command = to_upper(args[0]);
 
-    if (command == "PING" || command == "ECHO" || command == "CONFIG") {
+    if (command == "PING" || command == "ECHO") {
         return AdminCommands::handle(client, args);
     }
     else if (command == "SET" || command == "GET" || command == "INCR") {
@@ -65,6 +65,9 @@ std::string Dispatcher::execute_command(Database& db, std::shared_ptr<Client> cl
     }
     else if (command == "SUBSCRIBE") {
         return PubSubCommands::handle_subscribe(db, client, args);
+    }
+    else if (command == "PUBLISH") {
+        return PubSubCommands::handle_publish(db, args);
     }
     
     return "-ERR unknown command\r\n";

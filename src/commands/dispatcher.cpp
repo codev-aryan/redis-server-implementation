@@ -8,6 +8,7 @@
 #include "cmd_keys.hpp"
 #include "cmd_stream.hpp"
 #include "cmd_pubsub.hpp"
+#include "cmd_acl.hpp"
 #include "../utils/utils.hpp"
 #include "../server/client.hpp"
 
@@ -71,6 +72,9 @@ std::string Dispatcher::execute_command(Database& db, std::shared_ptr<Client> cl
     }
     else if (command == "PUBLISH") {
         return PubSubCommands::handle_publish(db, args);
+    }
+    else if (command == "ACL") {
+        return AclCommands::handle(db, client, args);
     }
     
     return "-ERR unknown command\r\n";

@@ -23,7 +23,8 @@ set(SOURCE_FILES
     src/commands/cmd_tx.cpp
     src/commands/cmd_keys.cpp
     src/commands/cmd_stream.cpp
-    src/commands/cmd_pubsub.cpp 
+    src/commands/cmd_pubsub.cpp
+    src/commands/cmd_acl.cpp
 )
 
 find_package(Threads REQUIRED)

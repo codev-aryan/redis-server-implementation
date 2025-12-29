@@ -41,7 +41,7 @@ std::string Dispatcher::execute_command(Database& db, std::shared_ptr<Client> cl
     std::string command = to_upper(args[0]);
 
     if (command == "PING" || command == "ECHO" || command == "CONFIG") {
-        return AdminCommands::handle(args);
+        return AdminCommands::handle(client, args);
     }
     else if (command == "SET" || command == "GET" || command == "INCR") {
         return StringCommands::handle(db, args);

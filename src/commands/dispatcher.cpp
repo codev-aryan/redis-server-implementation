@@ -15,6 +15,16 @@ std::string Dispatcher::dispatch(Database& db, std::shared_ptr<Client> client, c
     if (args.empty()) return "";
     std::string command = to_upper(args[0]);
 
+    if (!client->subscriptions.empty()) {
+        bool is_allowed = (command == "SUBSCRIBE" || command == "UNSUBSCRIBE" || 
+                           command == "PSUBSCRIBE" || command == "PUNSUBSCRIBE" || 
+                           command == "PING" || command == "QUIT");
+        
+        if (!is_allowed) {
+            return "-ERR Can't execute '" + args[0] + "': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context\r\n";
+        }
+    }
+
     if (command == "MULTI" || command == "EXEC" || command == "DISCARD") {
         return TxCommands::handle(db, client, args);
     }

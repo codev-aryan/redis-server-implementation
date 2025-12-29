@@ -73,7 +73,7 @@ std::string Dispatcher::execute_command(Database& db, std::shared_ptr<Client> cl
     else if (command == "PUBLISH") {
         return PubSubCommands::handle_publish(db, args);
     }
-    else if (command == "ACL") {
+    else if (command == "ACL" || command == "GETUSER") {
         return AclCommands::handle(db, client, args);
     }
     

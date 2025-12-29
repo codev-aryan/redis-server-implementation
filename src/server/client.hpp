@@ -15,7 +15,7 @@ public:
     std::shared_ptr<BlockedClient> blocker;
     std::unordered_set<std::string> subscriptions;
 
-    std::string username = "default";
+    std::string username = "default";   
 
     Client(int fd, Database& db);
     ~Client();

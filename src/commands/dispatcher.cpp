@@ -17,6 +17,13 @@ std::string Dispatcher::dispatch(Database& db, std::shared_ptr<Client> client, c
     if (args.empty()) return "";
     std::string command = to_upper(args[0]);
 
+    if (!client->is_authenticated) {
+        bool is_auth_command = (command == "AUTH" || command == "QUIT");
+        if (!is_auth_command) {
+            return "-NOAUTH Authentication required.\r\n";
+        }
+    }
+
     if (!client->subscriptions.empty()) {
         bool is_allowed = (command == "SUBSCRIBE" || command == "UNSUBSCRIBE" || 
                            command == "PSUBSCRIBE" || command == "PUNSUBSCRIBE" || 
@@ -78,7 +85,7 @@ std::string Dispatcher::execute_command(Database& db, std::shared_ptr<Client> cl
         return AclCommands::handle(db, client, args);
     }
     else if (command == "AUTH") {
-        return AuthCommands::handle(db, args);
+        return AuthCommands::handle(db, client, args);
     }
     
     return "-ERR unknown command\r\n";

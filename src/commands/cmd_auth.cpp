@@ -1,9 +1,9 @@
 #include "cmd_auth.hpp"
 #include "../utils/utils.hpp"
 #include "../utils/sha256.hpp"
+#include "../server/client.hpp"
 
-std::string AuthCommands::handle(Database& db, const std::vector<std::string>& args) {
-    
+std::string AuthCommands::handle(Database& db, std::shared_ptr<Client> client, const std::vector<std::string>& args) {
     std::string username;
     std::string password;
 
@@ -26,15 +26,25 @@ std::string AuthCommands::handle(Database& db, const std::vector<std::string>& a
 
     const User& user = it->second;
 
+    bool success = false;
+
     if (user.flags.find("nopass") != user.flags.end()) {
-        return "+OK\r\n";
+        success = true;
+    } 
+    else {
+        std::string hashed_input = SHA256::hash(password);
+        for (const auto& stored_hash : user.passwords) {
+            if (hashed_input == stored_hash) {
+                success = true;
+                break;
+            }
+        }
     }
 
-    std::string hashed_input = SHA256::hash(password);
-    for (const auto& stored_hash : user.passwords) {
-        if (hashed_input == stored_hash) {
-            return "+OK\r\n";
-        }
+    if (success) {
+        client->is_authenticated = true;
+        client->username = username;
+        return "+OK\r\n";
     }
 
     return "-WRONGPASS invalid username-password pair or user is disabled.\r\n";

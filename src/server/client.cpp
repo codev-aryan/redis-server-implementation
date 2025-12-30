@@ -7,6 +7,19 @@
 
 Client::Client(int fd, Database& db) : fd(fd), db(db) {
     blocker = std::make_shared<BlockedClient>();
+    
+    std::lock_guard<std::mutex> lock(db.acl_mutex);
+    auto it = db.users.find("default");
+    if (it != db.users.end()) {
+        const User& default_user = it->second;
+        if (default_user.flags.find("nopass") != default_user.flags.end()) {
+            is_authenticated = true;
+        } else {
+            is_authenticated = false;
+        }
+    } else {
+        is_authenticated = false; 
+    }
 }
 
 Client::~Client() {

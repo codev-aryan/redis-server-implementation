@@ -1,6 +1,13 @@
 #include "database.hpp"
 #include "../utils/utils.hpp"
 
+Database::Database() {
+    User default_user;
+    default_user.name = "default";
+    default_user.flags.insert("nopass");
+    users["default"] = default_user;
+}
+
 void Database::notify_blocked_clients(const std::string& key) {
     if (blocking_keys.find(key) == blocking_keys.end()) return;
 

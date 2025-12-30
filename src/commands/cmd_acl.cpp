@@ -15,7 +15,11 @@ std::string AclCommands::handle(Database& db, std::shared_ptr<Client> client, co
         std::string target_user = args[2];
         
         if (target_user == "default") {
-            return "*2\r\n$5\r\nflags\r\n*1\r\n$6\r\nnopass\r\n";
+            return "*4\r\n"
+                   "$5\r\nflags\r\n"
+                   "*1\r\n$6\r\nnopass\r\n"
+                   "$9\r\npasswords\r\n"
+                   "*0\r\n";
         }
         
         return "$-1\r\n";

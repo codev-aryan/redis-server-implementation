@@ -13,6 +13,7 @@ set(SOURCE_FILES
     src/utils/sha256.cpp
     src/protocol/parser.cpp
     src/db/database.cpp
+    src/db/rdb_loader.cpp
     src/server/server.cpp
     src/server/client.cpp
     src/commands/dispatcher.cpp

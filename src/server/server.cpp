@@ -10,7 +10,9 @@
 void Server::run(int port) {
     std::cout << std::unitbuf;
     std::cerr << std::unitbuf;
-  
+
+    db.load_from_file();
+    
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd < 0) {
         std::cerr << "Failed to create server socket\n";

@@ -67,7 +67,7 @@ std::string Dispatcher::execute_command(Database& db, std::shared_ptr<Client> cl
     else if (command == "GEOADD" || command == "GEOPOS" || command == "GEODIST" || command == "GEOSEARCH") {
         return GeoCommands::handle(db, args);
     }
-    else if (command == "TYPE") {
+    else if (command == "TYPE" || command == "KEYS") {
         return KeyCommands::handle(db, args);
     }
     else if (command == "XADD" || command == "XRANGE" || command == "XREAD") {

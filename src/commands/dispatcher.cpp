@@ -10,6 +10,7 @@
 #include "cmd_pubsub.hpp"
 #include "cmd_acl.hpp"
 #include "cmd_auth.hpp"
+#include "cmd_config.hpp"
 #include "../utils/utils.hpp"
 #include "../server/client.hpp"
 
@@ -86,6 +87,9 @@ std::string Dispatcher::execute_command(Database& db, std::shared_ptr<Client> cl
     }
     else if (command == "AUTH") {
         return AuthCommands::handle(db, client, args);
+    }
+    else if (command == "CONFIG") {
+        return ConfigCommands::handle(db, args);
     }
     
     return "-ERR unknown command\r\n";

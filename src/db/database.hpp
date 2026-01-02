@@ -22,6 +22,11 @@ struct User {
     std::vector<std::string> passwords;
 };
 
+struct ServerConfig {
+    std::string dir = "/tmp/redis-data";
+    std::string dbfilename = "dump.rdb";
+};
+
 class Database {
 public:
     std::unordered_map<std::string, Entry> kv_store;
@@ -33,6 +38,8 @@ public:
 
     std::mutex acl_mutex;
     std::unordered_map<std::string, User> users;
+
+    ServerConfig config;
 
     Database();
     void notify_blocked_clients(const std::string& key);

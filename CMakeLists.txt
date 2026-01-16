@@ -29,6 +29,7 @@ set(SOURCE_FILES
     src/commands/cmd_acl.cpp
     src/commands/cmd_auth.cpp
     src/commands/cmd_config.cpp
+    src/commands/cmd_replication.cpp
 )
 
 find_package(Threads REQUIRED)

@@ -11,6 +11,7 @@
 #include "cmd_acl.hpp"
 #include "cmd_auth.hpp"
 #include "cmd_config.hpp"
+#include "cmd_replication.hpp"
 #include "../utils/utils.hpp"
 #include "../server/client.hpp"
 
@@ -67,7 +68,7 @@ std::string Dispatcher::execute_command(Database& db, std::shared_ptr<Client> cl
     else if (command == "GEOADD" || command == "GEOPOS" || command == "GEODIST" || command == "GEOSEARCH") {
         return GeoCommands::handle(db, args);
     }
-    else if (command == "TYPE" || command == "KEYS") {
+    else if (command == "TYPE" || command == "KEYS") { 
         return KeyCommands::handle(db, args);
     }
     else if (command == "XADD" || command == "XRANGE" || command == "XREAD") {
@@ -90,6 +91,9 @@ std::string Dispatcher::execute_command(Database& db, std::shared_ptr<Client> cl
     }
     else if (command == "CONFIG") {
         return ConfigCommands::handle(db, args);
+    }
+    else if (command == "INFO") {
+        return ReplicationCommands::handle(db, args);
     }
     
     return "-ERR unknown command\r\n";

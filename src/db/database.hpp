@@ -26,6 +26,7 @@ struct ServerConfig {
     std::string dir = "/tmp/redis-data";
     std::string dbfilename = "dump.rdb";
     int port = 6379;
+    std::string role = "master";
 };
 
 class Database {

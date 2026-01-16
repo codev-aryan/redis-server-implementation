@@ -25,6 +25,7 @@ struct User {
 struct ServerConfig {
     std::string dir = "/tmp/redis-data";
     std::string dbfilename = "dump.rdb";
+    int port = 6379;
 };
 
 class Database {
@@ -44,5 +45,5 @@ public:
     Database();
     void notify_blocked_clients(const std::string& key);
     bool is_expired(const Entry& entry);
-    void load_from_file();
+    void load_from_file(); 
 };

@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include <sstream>
 
 int main(int argc, char **argv) {
     Server server;
@@ -19,6 +20,19 @@ int main(int argc, char **argv) {
                 server.db.config.port = std::stoi(argv[i + 1]);
             } catch (...) {
                 std::cerr << "Invalid port number provided" << std::endl;
+            }
+            i++;
+        } else if (arg == "--replicaof" && i + 1 < argc) {
+            server.db.config.role = "slave";
+            std::string replica_arg = argv[i + 1];
+            std::stringstream ss(replica_arg);
+            std::string host, port_str;
+            
+            if (ss >> host >> port_str) {
+                server.db.config.master_host = host;
+                try {
+                    server.db.config.master_port = std::stoi(port_str);
+                } catch (...) {}
             }
             i++;
         }

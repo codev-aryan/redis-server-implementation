@@ -48,4 +48,5 @@ public:
     Database();
     void notify_blocked_clients(const std::string& key);
     bool is_expired(const Entry& entry);
+    void load_from_file(); 
 };

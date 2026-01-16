@@ -29,6 +29,9 @@ struct ServerConfig {
     std::string role = "master"; 
     std::string master_host;
     int master_port = 6379;
+    
+    std::string master_replid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
+    long long master_repl_offset = 0;
 };
 
 class Database {

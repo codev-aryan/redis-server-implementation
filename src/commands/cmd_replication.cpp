@@ -13,10 +13,16 @@ std::string ReplicationCommands::handle(Database& db, const std::vector<std::str
 
         if (section == "REPLICATION") {
             std::string content = "role:" + db.config.role + "\r\n";
+            content += "master_replid:" + db.config.master_replid + "\r\n";
+            content += "master_repl_offset:" + std::to_string(db.config.master_repl_offset) + "\r\n";
+            
             return "$" + std::to_string(content.length()) + "\r\n" + content + "\r\n";
         }
-        
+
         std::string content = "role:" + db.config.role + "\r\n";
+        content += "master_replid:" + db.config.master_replid + "\r\n";
+        content += "master_repl_offset:" + std::to_string(db.config.master_repl_offset) + "\r\n";
+        
         return "$" + std::to_string(content.length()) + "\r\n" + content + "\r\n";
     }
 

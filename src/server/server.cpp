@@ -1,6 +1,7 @@
 #include "server.hpp"
 #include "client.hpp"
 #include "../commands/dispatcher.hpp"
+#include "../utils/utils.hpp"
 #include <iostream>
 #include <unistd.h>
 #include <sys/types.h>
@@ -13,16 +14,6 @@
 #include <vector>
 #include <sstream>
 #include <algorithm>
-
-bool read_n_bytes(int fd, char* buffer, size_t n) {
-    size_t total_read = 0;
-    while (total_read < n) {
-        ssize_t bytes_read = recv(fd, buffer + total_read, n - total_read, 0);
-        if (bytes_read <= 0) return false;
-        total_read += bytes_read;
-    }
-    return true;
-}
 
 void Server::run(int port) {
     std::cout << std::unitbuf;
@@ -160,8 +151,8 @@ void Server::handle_replication_stream(int master_fd) {
                     try {
                         std::string len_str = buffer.substr(1, len_end - 1);
                         size_t rdb_len = std::stoul(len_str);
-                        
                         size_t rdb_total_size = (len_end + 2) + rdb_len;
+                        
                         if (buffer.size() >= rdb_total_size) {
                             buffer.erase(0, rdb_total_size);
                             rdb_processed = true;
@@ -172,16 +163,17 @@ void Server::handle_replication_stream(int master_fd) {
                          buffer.clear();
                     }
                 } else {
-                    continue;
+                    continue; 
                 }
             }
         }
+
         if (rdb_processed) {
             while (true) {
                 if (buffer.empty() || buffer[0] != '*') break;
 
                 size_t line_end = buffer.find("\r\n");
-                if (line_end == std::string::npos) break;
+                if (line_end == std::string::npos) break; 
 
                 try {
                     int num_args = std::stoi(buffer.substr(1, line_end - 1));
@@ -191,7 +183,6 @@ void Server::handle_replication_stream(int master_fd) {
 
                     for (int i = 0; i < num_args; ++i) {
                         if (current_pos >= buffer.size()) { complete_command = false; break; }
-                        
                         if (buffer[current_pos] != '$') { complete_command = false; break; }
                         
                         size_t len_end = buffer.find("\r\n", current_pos);
@@ -203,14 +194,19 @@ void Server::handle_replication_stream(int master_fd) {
                         if (buffer.size() < arg_start + arg_len + 2) { complete_command = false; break; }
 
                         args.push_back(buffer.substr(arg_start, arg_len));
-                        current_pos = arg_start + arg_len + 2;
+                        current_pos = arg_start + arg_len + 2; 
                     }
 
                     if (complete_command) {
-                        Dispatcher::dispatch(db, master_client, args);
+                        std::string response = Dispatcher::dispatch(db, master_client, args);
+                        
+                        if (args.size() > 1 && to_upper(args[0]) == "REPLCONF" && to_upper(args[1]) == "GETACK") {
+                             send(master_fd, response.c_str(), response.length(), 0);
+                        }
+                        
                         buffer.erase(0, current_pos);
                     } else {
-                        break;
+                        break; 
                     }
                 } catch (...) {
                     break; 

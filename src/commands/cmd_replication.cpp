@@ -27,6 +27,9 @@ std::string ReplicationCommands::handle(Database& db, std::shared_ptr<Client> cl
         return "$" + std::to_string(content.length()) + "\r\n" + content + "\r\n";
     }
     else if (command == "REPLCONF") {
+        if (args.size() > 1 && to_upper(args[1]) == "GETACK") {
+            return "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$1\r\n0\r\n";
+        }
         return "+OK\r\n";
     }
     else if (command == "PSYNC") {

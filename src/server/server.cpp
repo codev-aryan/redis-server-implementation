@@ -1,5 +1,6 @@
 #include "server.hpp"
 #include "client.hpp"
+#include "../commands/dispatcher.hpp"
 #include <iostream>
 #include <unistd.h>
 #include <sys/types.h>
@@ -9,6 +10,19 @@
 #include <cstring>
 #include <thread>
 #include <string>
+#include <vector>
+#include <sstream>
+#include <algorithm>
+
+bool read_n_bytes(int fd, char* buffer, size_t n) {
+    size_t total_read = 0;
+    while (total_read < n) {
+        ssize_t bytes_read = recv(fd, buffer + total_read, n - total_read, 0);
+        if (bytes_read <= 0) return false;
+        total_read += bytes_read;
+    }
+    return true;
+}
 
 void Server::run(int port) {
     std::cout << std::unitbuf;
@@ -95,7 +109,7 @@ void Server::connect_to_master() {
     send(master_fd, ping_cmd.c_str(), ping_cmd.length(), 0);
 
     n = recv(master_fd, buffer, sizeof(buffer), 0);
-    if (n <= 0) { std::cerr << "Failed to receive PONG\n"; return; }
+    if (n <= 0) return;
 
     std::string port_str = std::to_string(db.config.port);
     std::string replconf_port = "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$" + 
@@ -103,18 +117,106 @@ void Server::connect_to_master() {
     send(master_fd, replconf_port.c_str(), replconf_port.length(), 0);
 
     n = recv(master_fd, buffer, sizeof(buffer), 0);
-    if (n <= 0) { std::cerr << "Failed to receive OK for listening-port\n"; return; }
+    if (n <= 0) return;
 
     std::string replconf_capa = "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n";
     send(master_fd, replconf_capa.c_str(), replconf_capa.length(), 0);
 
     n = recv(master_fd, buffer, sizeof(buffer), 0);
-    if (n <= 0) { std::cerr << "Failed to receive OK for capa\n"; return; }
+    if (n <= 0) return;
 
     std::string psync_cmd = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
     send(master_fd, psync_cmd.c_str(), psync_cmd.length(), 0);
 
-    n = recv(master_fd, buffer, sizeof(buffer), 0);
-    if (n <= 0) { std::cerr << "Failed to receive FULLRESYNC\n"; return; }
-    
+    std::thread(&Server::handle_replication_stream, this, master_fd).detach();
+}
+
+void Server::handle_replication_stream(int master_fd) {
+    auto master_client = std::make_shared<Client>(master_fd, this->db);
+    master_client->is_authenticated = true;
+
+    std::string buffer;
+    char chunk[1024];
+    bool rdb_processed = false;
+
+    while (true) {
+        ssize_t bytes_read = recv(master_fd, chunk, sizeof(chunk), 0);
+        if (bytes_read <= 0) break;
+        
+        buffer.append(chunk, bytes_read);
+
+        if (!rdb_processed) {
+            size_t newline_pos = buffer.find("\r\n");
+            if (newline_pos != std::string::npos) {
+                std::string line = buffer.substr(0, newline_pos);
+                if (line.find("FULLRESYNC") != std::string::npos) {
+                    buffer.erase(0, newline_pos + 2);
+                }
+            }
+
+            if (!buffer.empty() && buffer[0] == '$') {
+                size_t len_end = buffer.find("\r\n");
+                if (len_end != std::string::npos) {
+                    try {
+                        std::string len_str = buffer.substr(1, len_end - 1);
+                        size_t rdb_len = std::stoul(len_str);
+                        
+                        size_t rdb_total_size = (len_end + 2) + rdb_len;
+                        if (buffer.size() >= rdb_total_size) {
+                            buffer.erase(0, rdb_total_size);
+                            rdb_processed = true;
+                        } else {
+                            continue;
+                        }
+                    } catch (...) {
+                         buffer.clear();
+                    }
+                } else {
+                    continue;
+                }
+            }
+        }
+        if (rdb_processed) {
+            while (true) {
+                if (buffer.empty() || buffer[0] != '*') break;
+
+                size_t line_end = buffer.find("\r\n");
+                if (line_end == std::string::npos) break;
+
+                try {
+                    int num_args = std::stoi(buffer.substr(1, line_end - 1));
+                    size_t current_pos = line_end + 2;
+                    std::vector<std::string> args;
+                    bool complete_command = true;
+
+                    for (int i = 0; i < num_args; ++i) {
+                        if (current_pos >= buffer.size()) { complete_command = false; break; }
+                        
+                        if (buffer[current_pos] != '$') { complete_command = false; break; }
+                        
+                        size_t len_end = buffer.find("\r\n", current_pos);
+                        if (len_end == std::string::npos) { complete_command = false; break; }
+
+                        int arg_len = std::stoi(buffer.substr(current_pos + 1, len_end - (current_pos + 1)));
+                        size_t arg_start = len_end + 2;
+                        
+                        if (buffer.size() < arg_start + arg_len + 2) { complete_command = false; break; }
+
+                        args.push_back(buffer.substr(arg_start, arg_len));
+                        current_pos = arg_start + arg_len + 2;
+                    }
+
+                    if (complete_command) {
+                        Dispatcher::dispatch(db, master_client, args);
+                        buffer.erase(0, current_pos);
+                    } else {
+                        break;
+                    }
+                } catch (...) {
+                    break; 
+                }
+            }
+        }
+    }
+    close(master_fd);
 }

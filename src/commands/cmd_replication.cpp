@@ -28,6 +28,9 @@ std::string ReplicationCommands::handle(Database& db, const std::vector<std::str
     else if (command == "REPLCONF") {
         return "+OK\r\n";
     }
+    else if (command == "PSYNC") {
+        return "+FULLRESYNC " + db.config.master_replid + " 0\r\n";
+    }
 
     return "-ERR unknown command\r\n";
 }

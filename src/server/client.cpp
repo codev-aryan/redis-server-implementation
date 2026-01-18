@@ -2,6 +2,8 @@
 #include "../protocol/parser.hpp"
 #include "../commands/dispatcher.hpp"
 #include <unistd.h>
+#include <iostream>
+#include <algorithm>
 #include <cstring>
 #include <sys/socket.h>
 
@@ -27,30 +29,36 @@ Client::~Client() {
 
     std::lock_guard<std::mutex> lock(db.pubsub_mutex);
     for (const auto& channel : subscriptions) {
-        auto it = db.pubsub_channels.find(channel);
-        if (it != db.pubsub_channels.end()) {
-            it->second.erase(this);
-            if (it->second.empty()) {
-                db.pubsub_channels.erase(it);
-            }
-        }
+        db.pubsub_channels[channel].erase(this);
     }
 }
 
 void Client::handle_requests() {
     char buffer[1024];
+    std::string accumulated_data;
+
     while (true) {
-        memset(buffer, 0, sizeof(buffer));
-        int num_bytes = recv(fd, buffer, sizeof(buffer) - 1, 0);
+        ssize_t bytes_read = recv(fd, buffer, sizeof(buffer), 0);
+        if (bytes_read <= 0) break;
+
+        accumulated_data.append(buffer, bytes_read);
+
+        size_t processed_bytes = 0;
+        while (processed_bytes < accumulated_data.size()) {
+            std::vector<std::string> args;
+            size_t command_size = Parser::parse_resp_array(accumulated_data, processed_bytes, args);
+
+            if (command_size == 0) break;
+
+            std::string response = Dispatcher::dispatch(db, shared_from_this(), args);
+            
+            if (!response.empty()) {
+                send(fd, response.c_str(), response.length(), 0);
+            }
+            
+            processed_bytes += command_size;
+        }
         
-        if (num_bytes <= 0) break;
-
-        std::string request(buffer, num_bytes);
-        std::vector<std::string> args = parse_resp(request);
-
-        if (args.empty()) continue;
-
-        std::string response = Dispatcher::dispatch(db, shared_from_this(), args);
-        send(fd, response.c_str(), response.size(), 0);
+        accumulated_data.erase(0, processed_bytes);
     }
 }

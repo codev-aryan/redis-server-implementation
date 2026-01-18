@@ -60,6 +60,8 @@ std::string Dispatcher::dispatch(Database& db, std::shared_ptr<Client> client, c
             propagation_msg += "$" + std::to_string(arg.length()) + "\r\n" + arg + "\r\n";
         }
 
+        db.config.master_repl_offset += propagation_msg.length();
+
         std::lock_guard<std::mutex> lock(db.replication_mutex);
         auto it = db.replicas.begin();
         while (it != db.replicas.end()) {

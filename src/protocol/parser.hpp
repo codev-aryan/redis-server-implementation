@@ -1,5 +1,8 @@
 #pragma once
-#include <vector>
 #include <string>
+#include <vector>
 
-std::vector<std::string> parse_resp(const std::string& input);
+class Parser {
+public:
+    static size_t parse_resp_array(const std::string& buffer, size_t pos, std::vector<std::string>& args);
+};

@@ -17,6 +17,7 @@ public:
     
     std::string username = "default";
     bool is_authenticated = false;
+    long long repl_offset = 0;
 
     Client(int fd, Database& db);
     ~Client();

@@ -2,6 +2,7 @@
 #include "../utils/utils.hpp"
 #include "../server/client.hpp"
 #include <iostream>
+#include <algorithm>
 
 std::string ReplicationCommands::handle(Database& db, std::shared_ptr<Client> client, const std::vector<std::string>& args) {
     std::string command = to_upper(args[0]);
@@ -51,6 +52,22 @@ std::string ReplicationCommands::handle(Database& db, std::shared_ptr<Client> cl
         }
 
         return response;
+    }
+    else if (command == "WAIT") {
+        int connected_replicas = 0;
+        {
+            std::lock_guard<std::mutex> lock(db.replication_mutex);
+            auto it = db.replicas.begin();
+            while (it != db.replicas.end()) {
+                if (it->expired()) {
+                    it = db.replicas.erase(it);
+                } else {
+                    connected_replicas++;
+                    ++it;
+                }
+            }
+        }
+        return ":" + std::to_string(connected_replicas) + "\r\n";
     }
 
     return "-ERR unknown command\r\n";

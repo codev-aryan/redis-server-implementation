@@ -119,7 +119,7 @@ std::string Dispatcher::execute_command(Database& db, std::shared_ptr<Client> cl
     else if (command == "CONFIG") {
         return ConfigCommands::handle(db, args);
     }
-    else if (command == "INFO" || command == "REPLCONF" || command == "PSYNC") {
+    else if (command == "INFO" || command == "REPLCONF" || command == "PSYNC" || command == "WAIT") {
         return ReplicationCommands::handle(db, client, args);
     }
     

@@ -111,4 +111,10 @@ void Server::connect_to_master() {
     n = recv(master_fd, buffer, sizeof(buffer), 0);
     if (n <= 0) { std::cerr << "Failed to receive OK for capa\n"; return; }
 
+    std::string psync_cmd = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
+    send(master_fd, psync_cmd.c_str(), psync_cmd.length(), 0);
+
+    n = recv(master_fd, buffer, sizeof(buffer), 0);
+    if (n <= 0) { std::cerr << "Failed to receive FULLRESYNC\n"; return; }
+    
 }

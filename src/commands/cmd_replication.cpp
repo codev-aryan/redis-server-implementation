@@ -29,7 +29,18 @@ std::string ReplicationCommands::handle(Database& db, const std::vector<std::str
         return "+OK\r\n";
     }
     else if (command == "PSYNC") {
-        return "+FULLRESYNC " + db.config.master_replid + " 0\r\n";
+        std::string master_replid = db.config.master_replid;
+        std::string master_offset = "0";
+
+        std::string response = "+FULLRESYNC " + master_replid + " " + master_offset + "\r\n";
+
+        std::string empty_rdb_hex = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2";
+        std::string rdb_content = hex_to_bytes(empty_rdb_hex);
+
+        response += "$" + std::to_string(rdb_content.length()) + "\r\n";
+        response += rdb_content;
+
+        return response;
     }
 
     return "-ERR unknown command\r\n";

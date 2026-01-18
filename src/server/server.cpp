@@ -8,6 +8,7 @@
 #include <netdb.h> 
 #include <cstring>
 #include <thread>
+#include <string>
 
 void Server::run(int port) {
     std::cout << std::unitbuf;
@@ -87,7 +88,27 @@ void Server::connect_to_master() {
         return;
     }
 
+    char buffer[1024];
+    int n;
+
     std::string ping_cmd = "*1\r\n$4\r\nPING\r\n";
     send(master_fd, ping_cmd.c_str(), ping_cmd.length(), 0);
+
+    n = recv(master_fd, buffer, sizeof(buffer), 0);
+    if (n <= 0) { std::cerr << "Failed to receive PONG\n"; return; }
+
+    std::string port_str = std::to_string(db.config.port);
+    std::string replconf_port = "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$" + 
+                                std::to_string(port_str.length()) + "\r\n" + port_str + "\r\n";
+    send(master_fd, replconf_port.c_str(), replconf_port.length(), 0);
+
+    n = recv(master_fd, buffer, sizeof(buffer), 0);
+    if (n <= 0) { std::cerr << "Failed to receive OK for listening-port\n"; return; }
+
+    std::string replconf_capa = "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n";
+    send(master_fd, replconf_capa.c_str(), replconf_capa.length(), 0);
+
+    n = recv(master_fd, buffer, sizeof(buffer), 0);
+    if (n <= 0) { std::cerr << "Failed to receive OK for capa\n"; return; }
 
 }

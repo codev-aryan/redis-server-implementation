@@ -14,6 +14,8 @@
 #include "cmd_replication.hpp"
 #include "../utils/utils.hpp"
 #include "../server/client.hpp"
+#include <set>
+#include <sys/socket.h>
 
 std::string Dispatcher::dispatch(Database& db, std::shared_ptr<Client> client, const std::vector<std::string>& args) {
     if (args.empty()) return "";
@@ -45,7 +47,32 @@ std::string Dispatcher::dispatch(Database& db, std::shared_ptr<Client> client, c
         return "+QUEUED\r\n";
     }
 
-    return execute_command(db, client, args);
+    std::string response = execute_command(db, client, args);
+
+    static const std::set<std::string> write_commands = {
+        "SET", "INCR", "RPUSH", "LPUSH", "LPOP", "BLPOP", 
+        "ZADD", "ZREM", "GEOADD", "XADD", "DEL"
+    };
+
+    if (write_commands.count(command) > 0 && !response.empty() && response[0] != '-') {
+        std::string propagation_msg = "*" + std::to_string(args.size()) + "\r\n";
+        for (const auto& arg : args) {
+            propagation_msg += "$" + std::to_string(arg.length()) + "\r\n" + arg + "\r\n";
+        }
+
+        std::lock_guard<std::mutex> lock(db.replication_mutex);
+        auto it = db.replicas.begin();
+        while (it != db.replicas.end()) {
+            if (auto replica = it->lock()) {
+                send(replica->fd, propagation_msg.c_str(), propagation_msg.length(), 0);
+                ++it;
+            } else {
+                it = db.replicas.erase(it);
+            }
+        }
+    }
+
+    return response;
 }
 
 std::string Dispatcher::execute_command(Database& db, std::shared_ptr<Client> client, const std::vector<std::string>& args) {
@@ -93,7 +120,7 @@ std::string Dispatcher::execute_command(Database& db, std::shared_ptr<Client> cl
         return ConfigCommands::handle(db, args);
     }
     else if (command == "INFO" || command == "REPLCONF" || command == "PSYNC") {
-        return ReplicationCommands::handle(db, args);
+        return ReplicationCommands::handle(db, client, args);
     }
     
     return "-ERR unknown command\r\n";

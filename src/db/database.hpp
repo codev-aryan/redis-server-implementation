@@ -46,6 +46,9 @@ public:
     std::mutex acl_mutex;
     std::unordered_map<std::string, User> users;
 
+    std::mutex replication_mutex;
+    std::vector<std::weak_ptr<Client>> replicas;
+
     ServerConfig config;
 
     Database();

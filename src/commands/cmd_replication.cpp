@@ -1,8 +1,9 @@
 #include "cmd_replication.hpp"
 #include "../utils/utils.hpp"
+#include "../server/client.hpp"
 #include <iostream>
 
-std::string ReplicationCommands::handle(Database& db, const std::vector<std::string>& args) {
+std::string ReplicationCommands::handle(Database& db, std::shared_ptr<Client> client, const std::vector<std::string>& args) {
     std::string command = to_upper(args[0]);
 
     if (command == "INFO") {
@@ -39,6 +40,11 @@ std::string ReplicationCommands::handle(Database& db, const std::vector<std::str
 
         response += "$" + std::to_string(rdb_content.length()) + "\r\n";
         response += rdb_content;
+
+        {
+            std::lock_guard<std::mutex> lock(db.replication_mutex);
+            db.replicas.push_back(client);
+        }
 
         return response;
     }

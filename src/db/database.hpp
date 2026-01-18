@@ -48,7 +48,9 @@ public:
 
     std::mutex replication_mutex;
     std::vector<std::weak_ptr<Client>> replicas;
-
+    
+    long long bytes_processed = 0;
+    
     ServerConfig config;
 
     Database();

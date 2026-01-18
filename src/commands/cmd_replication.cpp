@@ -28,7 +28,8 @@ std::string ReplicationCommands::handle(Database& db, std::shared_ptr<Client> cl
     }
     else if (command == "REPLCONF") {
         if (args.size() > 1 && to_upper(args[1]) == "GETACK") {
-            return "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$1\r\n0\r\n";
+            std::string offset_str = std::to_string(db.bytes_processed);
+            return "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$" + std::to_string(offset_str.length()) + "\r\n" + offset_str + "\r\n";
         }
         return "+OK\r\n";
     }

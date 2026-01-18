@@ -203,7 +203,9 @@ void Server::handle_replication_stream(int master_fd) {
                         if (args.size() > 1 && to_upper(args[0]) == "REPLCONF" && to_upper(args[1]) == "GETACK") {
                              send(master_fd, response.c_str(), response.length(), 0);
                         }
-                        
+
+                        db.bytes_processed += current_pos;
+
                         buffer.erase(0, current_pos);
                     } else {
                         break; 
